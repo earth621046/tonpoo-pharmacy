@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>POS ร้านยา V4 (Supabase Cloud Connected)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- เพิ่มไลบรารี Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root { --ink:#10302c; --pine:#0f766e; --pine-d:#0b5a54; --paper:#f2f6f5; --line:#d8e2e0; --warn:#b45309; --bad:#b91c1c; }
+    html, body { height: 100%; }
+    /* ภาษาไทยมีสระ/วรรณยุกต์ซ้อนบน-ล่าง ต้องเว้นบรรทัดให้พอ ไม่งั้นตัวอักษรเหลื่อมกัน */
+    #app, #app * { line-height: 1.55 !important; }
+    #app .text-xs { font-size: .82rem !important; }
+    #app .text-sm { font-size: .95rem !important; }
+    body { font-family: 'IBM Plex Sans Thai','Sarabun','Noto Sans Thai','Thonburi',system-ui,sans-serif; font-size: 16px; background: var(--paper); color: var(--ink);
+           -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+    button { touch-action: manipulation; cursor: pointer; }
+    .num { font-variant-numeric: tabular-nums; }
+    .hdr { background: #0f3f3a; color: #fff; }
+    .tab { padding: .65rem 1.1rem; font-size: 1rem; border-radius: .6rem; font-weight: 600; white-space: nowrap; color: #b9dcd7; position: relative; }
+    .tab-on { background: #fff; color: #0f3f3a; }
+    .badge { position:absolute; top:-4px; right:-2px; background:#dc2626; color:#fff; font-size:11px; min-width:18px; height:18px;
+             border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
+    .inp { width:100%; padding:.7rem .8rem; border:1.5px solid var(--line); border-radius:.6rem; font-size:16px; background:#fff; color: var(--ink); }
+    .inp:focus { outline:none; border-color: var(--pine); box-shadow: 0 0 0 3px rgba(15,118,110,.15); }
+    .lbl { display:block; font-size:.85rem; color:#5b6f6b; margin-bottom:.25rem; }
+    .btn { padding:.7rem 1rem; border-radius:.65rem; font-weight:600; font-size:1rem; min-height:48px; transition: transform .05s; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-pri { background: var(--pine); color:#fff; }
+    .btn-dark { background:#1f2937; color:#fff; }
+    .btn-ghost { background:#fff; border:1.5px solid var(--line); color: var(--ink); }
+    .btn-bad { background: var(--bad); color:#fff; }
+    .btn-badline { background:#fff; border:1.5px solid #fecaca; color: var(--bad); }
+    .card { background:#fff; border:1px solid var(--line); border-radius:.9rem; }
+    .chip { padding:.45rem .9rem; border-radius:999px; border:1.5px solid var(--line); background:#fff; font-size:.9rem; font-weight:500; white-space:nowrap; }
+    .chip-on { background: var(--pine); color:#fff; border-color: var(--pine); }
+    .tile { text-align:left; padding:.9rem; border:1.5px solid var(--line); border-radius:.8rem; background:#fff; min-height:116px; font-size:1rem;
+            display:flex; flex-direction:column; justify-content:space-between; }
+    .tile:active:not(.tile-out) { transform: scale(.97); border-color: var(--pine); }
+    .tile-out { background:#f1f5f4; color:#9aaba8; }
+    .modal-bg { position:fixed; inset:0; background: rgba(16,48,44,.55); display:flex; align-items:flex-end; justify-content:center; z-index:60; }
+    .modal { background:#fff; width:100%; max-width:30rem; border-radius:1.1rem 1.1rem 0 0; max-height:92vh; overflow-y:auto; }
+    @media (min-width: 640px) { .modal-bg { align-items:center; } .modal { border-radius:1.1rem; } }
+    .row-void { opacity:.55; }
+    .cart-panel { position:fixed; left:0; right:0; top:0; height:100vh; height:100dvh; z-index:40; }
+    @media (min-width: 768px) {
+      .cart-panel { position:static; height:auto; width:24rem; z-index:auto; border:1px solid var(--line); border-radius:.9rem; overflow:hidden; }
+    }
+    .tag { display:inline-block; font-size:.75rem; padding:.1rem .5rem; border-radius:999px; font-weight:600; }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-thumb { background:#c5d3d0; border-radius:10px; }
+  </style>
+</head>
+<body>
+<div id="app" style="height:100vh; height:100dvh;" class="flex flex-col max-w-7xl mx-auto relative">
+
+  <!-- หน้าจอโหลดข้อมูลจาก Supabase -->
+  <div v-if="isLoading" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center">
+    <div class="text-2xl font-bold text-teal-700 mb-4">กำลังซิงค์คลาวด์เซฟ...</div>
+    <div class="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+
+  <!-- ============ Header ============ -->
+  <header class="hdr px-4 pt-3 pb-2">
+    <div class="flex items-center justify-between mb-2">
+      <div class="font-bold text-lg">{{ S.settings.shopName }}</div>
+      <div class="text-sm" style="color:#b9dcd7">{{ todayLabel }}</div>
+    </div>
+    <nav class="flex gap-1 overflow-x-auto pb-1">
+      <button v-for="t in tabs" :key="t.id" @click="goTab(t.id)" class="tab" :class="tab === t.id ? 'tab-on' : ''">
+        {{ t.name }}
+        <span v-if="t.id === 'stock' && alertCount > 0" class="badge">{{ alertCount }}</span>
+      </button>
+    </nav>
+  </header>
+  <div v-if="!storageOk" class="bg-amber-100 text-amber-900 text-sm px-4 py-2">
+    โหมดทดลอง: เบราว์เซอร์นี้ไม่ยอมให้บันทึกข้อมูลถาวร ข้อมูลจะหายเมื่อรีเฟรชหน้า
+  </div>
+
+  <main class="flex-1 min-h-0 relative">
+
+    <!-- ============ 1) ขาย ============ -->
+    <section v-if="tab === 'pos'" class="h-full flex flex-col md:flex-row gap-3 p-3">
+
+      <!-- ฝั่งเลือกยา -->
+      <div class="flex-1 min-h-0 flex flex-col card overflow-hidden">
+        <div class="p-3 border-b" style="border-color:var(--line)">
+          <input v-model="search" @keyup.enter="onSearchEnter" class="inp" placeholder="พิมพ์รหัส หรือชื่อยา แล้วกด Enter" autocomplete="off">
+          <div class="flex gap-2 overflow-x-auto pt-3 pb-1">
+            <button class="chip" :class="cat === 'ทั้งหมด' ? 'chip-on' : ''" @click="cat = 'ทั้งหมด'">ทั้งหมด</button>
+            <button v-for="c in CATS" :key="c" class="chip" :class="cat === c ? 'chip-on' : ''" @click="cat = c">{{ c }}</button>
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
+          <div v-if="posList.length === 0" class="text-center text-slate-400 py-10">ไม่พบรายการ ลองพิมพ์คำอื่น</div>
+          <div class="grid grid-cols-2 lg:grid-cols-3 gap-2">
+            <button v-for="p in posList" :key="p.id" class="tile" :class="availFor(p) <= 0 ? 'tile-out' : ''" @click="addToCart(p)">
+              <div>
+                <div class="text-xs text-slate-500">{{ p.code }}</div>
+                <div class="font-semibold leading-normal">{{ p.name }}</div>
+              </div>
+              <div class="flex items-end justify-between mt-2">
+                <div class="font-bold text-lg num" style="color:var(--pine)">฿{{ money(p.price) }}</div>
+                <div class="text-xs num" :class="(stockMap[p.id] || 0) <= 0 ? 'text-red-600 font-semibold' : (!p.bundle && stockMap[p.id] <= p.reorder ? 'text-amber-700 font-semibold' : 'text-slate-500')">
+                  {{ (stockMap[p.id] || 0) <= 0 ? 'หมด' : (p.bundle ? 'ประกอบได้ ' : 'เหลือ ') + stockMap[p.id] }}
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ตะกร้า -->
+      <aside :class="cartOpen ? 'flex' : 'hidden md:flex'" class="cart-panel flex-col bg-white">
+        <div class="p-4 flex items-center justify-between" style="background:#1f2937;color:#fff">
+          <div class="font-bold text-lg">ตะกร้า <span class="text-sm font-normal opacity-70">({{ cart.length }} รายการ)</span></div>
+          <div class="flex gap-2">
+            <button v-if="cart.length" class="tag" style="background:#dc2626;color:#fff;padding:.4rem .8rem" @click="clearCart">ล้างตะกร้า</button>
+            <button class="md:hidden tag" style="background:#374151;color:#fff;padding:.4rem .8rem" @click="cartOpen = false">กลับไปเลือกยา</button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3">
+          <div v-if="cart.length === 0" class="text-center text-slate-400 mt-12">ยังไม่มีสินค้า แตะยาเพื่อเพิ่มลงตะกร้า</div>
+          <div v-for="(item, i) in cart" :key="item.key" class="p-3 mb-2 rounded-xl border" style="border-color:var(--line);background:#f8fbfa">
+            <div class="flex justify-between gap-2">
+              <div class="font-semibold">{{ item.name }}</div>
+              <button class="text-slate-400 text-2xl px-2" @click="removeItem(i)" aria-label="ลบรายการ">&times;</button>
+            </div>
+            <div class="flex items-center justify-between mt-2 gap-2">
+              <div class="flex items-center gap-2">
+                <button class="btn btn-ghost !min-h-0 w-11 h-11 !p-0 text-xl" @click="changeQty(i, -1)">−</button>
+                <input :value="item.qty" @change="setQty(i, $event.target.value)" @focus="$event.target.select()" type="number" inputmode="numeric" class="inp !w-14 !px-1 text-center font-bold">
+                <button class="btn btn-pri !min-h-0 w-11 h-11 !p-0 text-xl" @click="changeQty(i, 1)">+</button>
+              </div>
+              <div class="text-right">
+                <div v-if="editPriceKey !== item.key" class="text-sm text-slate-500">
+                  ฿{{ money(item.price) }} × {{ item.qty }}
+                  <button class="underline ml-1" style="color:var(--pine)" @click="startEditPrice(item)">แก้ราคา</button>
+                </div>
+                <div v-else class="flex items-center justify-end gap-1 text-sm">
+                  ฿<input :id="'price-' + item.key" v-model.number="item.price" @blur="editPriceKey = null" @keyup.enter="editPriceKey = null" type="number" inputmode="decimal" class="inp !w-24 !py-1 !px-2 text-right">
+                </div>
+                <div class="font-bold text-lg num">฿{{ money(lineTotal(item)) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 border-t bg-slate-50" style="border-color:var(--line); padding-bottom: calc(1rem + env(safe-area-inset-bottom))">
+          <div class="flex items-center justify-between mb-2 text-sm">
+            <span class="text-slate-600">ส่วนลดทั้งบิล (บาท)</span>
+            <input v-model.number="discount" type="number" inputmode="decimal" placeholder="0" class="inp !w-28 !py-1 text-right">
+          </div>
+          <div class="flex justify-between text-slate-500 text-sm mb-1"><span>รวมสินค้า</span><span class="num">฿{{ money(subtotal) }}</span></div>
+          <div class="flex justify-between items-end mb-3">
+            <span class="text-lg font-bold">ยอดรวม</span>
+            <span class="text-3xl font-bold num" style="color:var(--pine)">฿{{ money(total) }}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="btn btn-dark text-lg" :disabled="cart.length === 0" @click="openPay('cash')">เงินสด</button>
+            <button class="btn btn-pri text-lg" :disabled="cart.length === 0" @click="openPay('transfer')">รับโอน</button>
+          </div>
+          <button class="w-full mt-2 py-2 text-sm underline text-slate-500" @click="otherModal = { open: true, name: 'ทิป / รายรับอื่น', amount: '' }">+ เพิ่มรายรับอื่น (ทิป / ค่าบริการ)</button>
+        </div>
+      </aside>
+
+      <!-- แถบล่างบนมือถือ -->
+      <div v-if="!cartOpen" class="md:hidden fixed bottom-0 inset-x-0 p-3 z-30 bg-white border-t" style="border-color:var(--line)">
+        <button class="btn btn-pri w-full flex justify-between items-center" @click="cartOpen = true">
+          <span>ตะกร้า {{ cartCount }} ชิ้น</span><span class="num">฿{{ money(total) }} &rsaquo;</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ 2) บิล ============ -->
+    <section v-else-if="tab === 'history'" class="h-full overflow-y-auto p-3">
+      <div class="flex items-center gap-2 mb-3">
+        <input type="date" v-model="histDay" class="inp !w-auto">
+        <button class="btn btn-ghost !min-h-0 !py-2" @click="histDay = dayKey(new Date())">วันนี้</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+        <div class="card p-3"><div class="text-xs text-slate-500">จำนวนบิล</div><div class="text-xl font-bold num">{{ histReport.count }}</div></div>
+        <div class="card p-3"><div class="text-xs text-slate-500">ยอดขาย</div><div class="text-xl font-bold num" style="color:var(--pine)">฿{{ money(histReport.total) }}</div></div>
+        <div class="card p-3"><div class="text-xs text-slate-500">ยกเลิก</div><div class="text-xl font-bold num text-red-600">{{ histReport.voidCount }}</div></div>
+      </div>
+      <div v-if="histSales.length === 0" class="text-center text-slate-400 py-12">วันนี้ยังไม่มีบิล</div>
+      <button v-for="s in histSales" :key="s.id" class="card w-full text-left p-3 mb-2" :class="s.status === 'void' ? 'row-void' : ''" @click="saleDetailId = s.id; voidReason = 'คีย์ผิด'">
+        <div class="flex justify-between items-center">
+          <div class="font-semibold">{{ s.no }} <span class="text-sm font-normal text-slate-500">{{ fmtTime(s.ts) }}</span></div>
+          <div class="font-bold num" :class="s.status === 'void' ? 'line-through' : ''">฿{{ money(s.total) }}</div>
+        </div>
+        <div class="text-sm text-slate-600 mt-1">{{ saleSummary(s) }}</div>
+        <div class="mt-1">
+          <span class="tag" :style="s.method === 'cash' ? 'background:#e2e8f0' : 'background:#ccfbf1;color:#0f766e'">{{ s.method === 'cash' ? 'เงินสด' : 'โอน' }}</span>
+          <span v-if="s.status === 'void'" class="tag ml-1" style="background:#fee2e2;color:#b91c1c">ยกเลิกแล้ว</span>
+        </div>
+      </button>
+    </section>
+
+    <!-- ============ 3) คลังสินค้า ============ -->
+    <section v-else-if="tab === 'stock'" class="h-full overflow-y-auto p-3">
+      <div class="flex gap-2 mb-3">
+        <input v-model="invSearch" class="inp" placeholder="ค้นหาชื่อ / ชื่อสามัญ / รหัส">
+        <button class="btn btn-pri whitespace-nowrap" @click="openForm(null)">+ เพิ่มยา</button>
+      </div>
+      <div class="flex gap-2 overflow-x-auto pb-2 mb-1">
+        <button class="chip" :class="invFilter === 'all' ? 'chip-on' : ''" @click="invFilter = 'all'">ทั้งหมด {{ invAll.length }}</button>
+        <button class="chip" :class="invFilter === 'low' ? 'chip-on' : ''" @click="invFilter = 'low'">ใกล้หมด {{ invCount.low }}</button>
+        <button class="chip" :class="invFilter === 'out' ? 'chip-on' : ''" @click="invFilter = 'out'">หมด {{ invCount.out }}</button>
+        <button class="chip" :class="invFilter === 'near' ? 'chip-on' : ''" @click="invFilter = 'near'">ใกล้หมดอายุ {{ invCount.near }}</button>
+      </div>
+      <div v-if="invRows.length === 0" class="text-center text-slate-400 py-12">ไม่พบรายการ</div>
+      <button v-for="r in invRows" :key="r.p.id" class="card w-full text-left p-3 mb-2 flex items-center justify-between gap-3" @click="openProduct(r.p)">
+        <div class="min-w-0">
+          <div class="font-semibold leading-normal">{{ r.p.name }}</div>
+          <div class="text-xs text-slate-500 truncate">{{ r.p.code }} &nbsp;{{ r.p.generic }}</div>
+          <div class="text-xs mt-1">
+            <span class="text-slate-500">ขาย ฿{{ money(r.p.price) }}</span>
+            <span v-if="r.exp" class="ml-2" :class="r.days < 0 ? 'text-red-600 font-semibold' : (r.near ? 'text-amber-700 font-semibold' : 'text-slate-500')">
+              {{ r.days < 0 ? 'หมดอายุแล้ว' : 'หมดอายุ ' + fmtExp(r.exp) }}
+            </span>
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-2xl font-bold num" :class="r.out ? 'text-red-600' : (r.low ? 'text-amber-700' : '')">{{ r.stock }}</div>
+          <div class="text-xs text-slate-500">{{ r.p.bundle ? 'ชุดที่ประกอบได้' : r.p.unit }}</div>
+        </div>
+      </button>
+    </section>
+
+    <!-- ============ 4) รับของเข้า ============ -->
+    <section v-else-if="tab === 'receive'" class="h-full overflow-y-auto p-3">
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-3">1. ข้อมูลบิลรับเข้า</div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div><label class="lbl">เลขที่บิล / ใบส่งของ</label><input v-model="rcv.invoice" class="inp" placeholder="เช่น ORR-00-26-40076"></div>
+          <div><label class="lbl">ผู้จำหน่าย</label><input v-model="rcv.supplier" class="inp" placeholder="ไม่บังคับ"></div>
+          <div><label class="lbl">วันที่รับ</label><input type="date" v-model="rcv.day" class="inp"></div>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-3">2. รายการยาที่รับเข้า</div>
+        <div class="relative mb-3">
+          <input v-model="rcvSearch" @focus="rcvOpen = true" @input="rcvOpen = true" class="inp" placeholder="ค้นหายาที่จะรับเข้า" autocomplete="off">
+          <div v-if="rcvOpen && rcvSearch" class="absolute left-0 right-0 bg-white border shadow-xl rounded-xl mt-1 z-20 max-h-64 overflow-y-auto" style="border-color:var(--line)">
+            <button v-for="p in rcvResults" :key="p.id" class="w-full text-left p-3 border-b hover:bg-teal-50" style="border-color:var(--line)" @click="addRcvItem(p)">
+              <span class="text-slate-500 mr-2">{{ p.code }}</span><span class="font-semibold">{{ p.name }}</span>
+            </button>
+            <div v-if="rcvResults.length === 0" class="p-3 text-slate-400">ไม่พบ ถ้าเป็นยาใหม่ให้ไปเพิ่มที่แท็บคลังสินค้าก่อน</div>
+          </div>
+        </div>
+
+        <div v-if="rcv.items.length === 0" class="text-center text-slate-400 py-8 rounded-xl border border-dashed" style="border-color:var(--line)">ยังไม่มีรายการ ค้นหายาแล้วเพิ่มลงบิล</div>
+        <div v-for="(it, i) in rcv.items" :key="i" class="p-3 mb-2 rounded-xl border" style="border-color:var(--line);background:#f8fbfa">
+          <div class="flex justify-between">
+            <div class="font-semibold">{{ it.name }}</div>
+            <button class="text-red-500 font-bold px-2" @click="rcv.items.splice(i, 1)">ลบ</button>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+            <div><label class="lbl">จำนวน ({{ it.unit }})</label><input v-model.number="it.qty" type="number" inputmode="numeric" class="inp"></div>
+            <div><label class="lbl">ราคารับ/{{ it.unit }}</label><input v-model.number="it.unitCost" type="number" inputmode="decimal" class="inp"></div>
+            <div><label class="lbl">เลขล็อต</label><input v-model="it.lotNo" class="inp" placeholder="ไม่บังคับ"></div>
+            <div><label class="lbl">วันหมดอายุ</label><input v-model="it.expiry" type="date" class="inp"></div>
+          </div>
+          <div class="text-sm text-slate-500 mt-2">
+            รวมทุน ฿{{ money((Number(it.qty) || 0) * (Number(it.unitCost) || 0)) }}
+            <span v-if="marginText(it)">, {{ marginText(it) }}</span>
+          </div>
+        </div>
+        <div v-if="rcv.items.length" class="flex items-center justify-between mt-3">
+          <div class="font-bold text-lg">มูลค่าบิลรวม ฿{{ money(rcvTotal) }}</div>
+          <button class="btn btn-pri" @click="saveReceive">บันทึกรับเข้า</button>
+        </div>
+      </div>
+
+      <div class="font-bold mb-2 mt-4">บิลรับเข้าล่าสุด</div>
+      <div v-if="recentReceipts.length === 0" class="text-slate-400 text-sm">ยังไม่มีบิลรับเข้า</div>
+      <div v-for="r in recentReceipts" :key="r.id" class="card p-3 mb-2">
+        <div class="flex justify-between"><div class="font-semibold">{{ r.invoice || 'ไม่ระบุเลขที่บิล' }}</div><div class="font-bold num">฿{{ money(r.total) }}</div></div>
+        <div class="text-xs text-slate-500">{{ fmtDay(r.day) }} {{ r.supplier }} รวม {{ r.items.length }} รายการ</div>
+      </div>
+    </section>
+
+    <!-- ============ 5) ปิดวัน ============ -->
+    <section v-else-if="tab === 'report'" class="h-full overflow-y-auto p-3">
+      <div class="flex items-center gap-2 mb-3">
+        <input type="date" v-model="repDay" class="inp !w-auto">
+        <button class="btn btn-ghost !min-h-0 !py-2" @click="repDay = dayKey(new Date())">วันนี้</button>
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="text-sm text-slate-500">ยอดขายสุทธิ ({{ rep.count }} บิล)</div>
+        <div class="text-4xl font-bold num" style="color:var(--pine)">฿{{ money(rep.total) }}</div>
+        <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">เงินสด</div><div class="font-bold num">฿{{ money(rep.cash) }}</div></div>
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">โอน</div><div class="font-bold num">฿{{ money(rep.transfer) }}</div></div>
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">รายรับอื่น</div><div class="font-bold num">฿{{ money(rep.other) }}</div></div>
+        </div>
+        <div class="text-sm text-slate-600 mt-3">กำไรขั้นต้นโดยประมาณ ฿{{ money(rep.profit) }} <span v-if="rep.voidCount">, ยกเลิก {{ rep.voidCount }} บิล (฿{{ money(rep.voidTotal) }})</span></div>
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-3">นับเงินสดในลิ้นชัก</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">เงินทอนตั้งต้น</label><input v-model.number="openFloat" type="number" inputmode="decimal" class="inp" placeholder="0"></div>
+          <div><label class="lbl">นับได้จริง</label><input v-model.number="cashCounted" type="number" inputmode="decimal" class="inp" placeholder="0"></div>
+        </div>
+        <div class="flex justify-between mt-3 text-sm"><span class="text-slate-500">เงินสดที่ควรมี (ตั้งต้น + ขายเงินสด)</span><span class="font-bold num">฿{{ money(cashExpected) }}</span></div>
+        <div v-if="cashCounted !== '' && cashCounted !== null" class="mt-2 p-3 rounded-lg text-center font-bold"
+             :style="cashDiff === 0 ? 'background:#dcfce7;color:#166534' : 'background:#fee2e2;color:#b91c1c'">
+          {{ cashDiff === 0 ? 'เงินตรง' : (cashDiff > 0 ? 'เงินเกิน ฿' + money(cashDiff) : 'เงินขาด ฿' + money(-cashDiff)) }}
+        </div>
+        <input v-model="closeNote" class="inp mt-3" placeholder="หมายเหตุ (ถ้ามี)">
+        <button class="btn btn-dark w-full mt-3" @click="saveClosing">บันทึกปิดวัน</button>
+        <div v-if="savedClosing" class="text-xs text-slate-500 mt-2 text-center">บันทึกไว้แล้วเมื่อ {{ fmtTime(savedClosing.ts) }}</div>
+      </div>
+
+      <div class="card p-4">
+        <div class="font-bold mb-2">ขายดีวันนี้</div>
+        <div v-if="rep.top.length === 0" class="text-slate-400 text-sm">ยังไม่มีข้อมูล</div>
+        <div v-for="t in rep.top" :key="t.name" class="flex justify-between py-1 text-sm"><span>{{ t.name }}</span><span class="num font-semibold">{{ t.qty }}</span></div>
+      </div>
+    </section>
+
+    <!-- ============ 6) ตั้งค่า ============ -->
+    <section v-else-if="tab === 'settings'" class="h-full overflow-y-auto p-3">
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-3">ข้อมูลร้าน</div>
+        <label class="lbl">ชื่อร้าน</label><input v-model="S.settings.shopName" class="inp mb-3">
+        <label class="lbl">เตือนก่อนยาหมดอายุ (วัน)</label><input v-model.number="S.settings.nearExpiryDays" type="number" inputmode="numeric" class="inp">
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-1">เปลี่ยนรหัสผ่าน</div>
+        <div class="text-xs text-slate-500 mb-3">ใช้ยืนยันตอนปรับสต็อก และตอนยกเลิกบิลย้อนหลัง</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">รหัสเดิม</label><input v-model="pinForm.old" type="password" inputmode="numeric" class="inp"></div>
+          <div><label class="lbl">รหัสใหม่ (4 ตัวขึ้นไป)</label><input v-model="pinForm.next" type="password" inputmode="numeric" class="inp"></div>
+        </div>
+        <button class="btn btn-ghost w-full mt-3" @click="changePin">เปลี่ยนรหัส</button>
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-1">สำรองและกู้คืนข้อมูล</div>
+        <div class="text-xs text-slate-500 mb-3">ตอนนี้ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้ ควรสำรองไว้เป็นระยะ</div>
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <button class="btn btn-ghost" @click="makeBackup">สร้างข้อมูลสำรอง</button>
+          <button class="btn btn-ghost" @click="copyBackup">คัดลอกข้อความ</button>
+        </div>
+        <textarea v-model="backupText" rows="4" class="inp" placeholder="ข้อความสำรองจะแสดงที่นี่ หรือวางข้อความสำรองเพื่อกู้คืน"></textarea>
+        <button class="btn btn-badline w-full mt-3" @click="restoreBackup">กู้คืนจากข้อความนี้ (ทับข้อมูลปัจจุบัน)</button>
+      </div>
+
+      <div class="card p-4">
+        <div class="font-bold mb-1">เริ่มใหม่ทั้งหมด</div>
+        <div class="text-xs text-slate-500 mb-3">ล้างบิลและประวัติทั้งหมด แล้วกลับไปใช้สต็อกตั้งต้นจากไฟล์ Excel</div>
+        <button class="btn btn-badline w-full" @click="resetAll">ล้างข้อมูลและเริ่มใหม่</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= Modals ================= -->
+
+  <!-- ชำระเงิน -->
+  <div v-if="payModal.open" class="modal-bg" @click.self="payModal.open = false">
+    <div class="modal p-5">
+      <div class="flex justify-between items-start mb-3">
+        <div class="font-bold text-lg">รับเงิน</div>
+        <button class="text-slate-400 text-2xl leading-none" @click="payModal.open = false">&times;</button>
+      </div>
+      <div class="text-center mb-4">
+        <div class="text-sm text-slate-500">ยอดที่ต้องรับ</div>
+        <div class="text-4xl font-bold num" style="color:var(--pine)">฿{{ money(total) }}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-4">
+        <button class="btn" :class="payModal.method === 'cash' ? 'btn-dark' : 'btn-ghost'" @click="payModal.method = 'cash'; payModal.received = total">เงินสด</button>
+        <button class="btn" :class="payModal.method === 'transfer' ? 'btn-pri' : 'btn-ghost'" @click="payModal.method = 'transfer'">รับโอน</button>
+      </div>
+      <div v-if="payModal.method === 'cash'">
+        <label class="lbl">รับเงินมา (บาท)</label>
+        <input v-model.number="payModal.received" @focus="$event.target.select()" type="number" inputmode="decimal" class="inp text-2xl font-bold text-right" placeholder="0">
+        <div class="flex gap-2 flex-wrap mt-3">
+          <button class="chip" @click="payModal.received = total">พอดี</button>
+          <button v-for="v in quickCash" :key="v" class="chip" @click="payModal.received = v">{{ v }}</button>
+        </div>
+        <div class="mt-4 p-3 rounded-xl text-center" :style="cashChange >= 0 && payModal.received !== '' ? 'background:#dcfce7;color:#166534' : 'background:#eef3f2;color:#5b6f6b'">
+          <div class="text-sm">{{ cashChange >= 0 || payModal.received === '' ? 'เงินทอน' : 'ยังขาดอีก' }}</div>
+          <div class="text-3xl font-bold num">฿{{ payModal.received === '' ? '0' : money(Math.abs(cashChange)) }}</div>
+        </div>
+      </div>
+      <div v-else class="p-4 rounded-xl text-center" style="background:#ccfbf1;color:#0f766e">ตรวจสอบยอดเงินเข้าบัญชีก่อนกดยืนยัน</div>
+      <div style="position:sticky; bottom:0; background:#fff; padding-top:.75rem; margin-top:.5rem; padding-bottom:env(safe-area-inset-bottom)">
+        <button class="btn btn-pri w-full text-lg" :disabled="!canPay" @click="confirmPay">ยืนยันรับเงินและตัดสต็อก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ผลลัพธ์หลังขาย -->
+  <div v-if="resultSale" class="modal-bg">
+    <div class="modal p-6 text-center">
+      <div class="w-14 h-14 mx-auto rounded-full flex items-center justify-center text-3xl mb-2" style="background:#dcfce7;color:#166534">&#10003;</div>
+      <div class="font-bold text-lg">บันทึกบิล {{ resultSale.no }} แล้ว</div>
+      <div class="text-slate-500">ยอด ฿{{ money(resultSale.total) }} ({{ resultSale.method === 'cash' ? 'เงินสด' : 'รับโอน' }})</div>
+      <div v-if="resultSale.method === 'cash'" class="my-4 p-4 rounded-xl" style="background:#dcfce7;color:#166534">
+        <div class="text-sm">เงินทอน</div><div class="text-5xl font-bold num">฿{{ money(resultSale.change) }}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        <button class="btn btn-badline" @click="undoResult">ยกเลิกบิลนี้</button>
+        <button class="btn btn-pri" @click="resultSale = null">ขายรายการต่อไป</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- รายรับอื่น -->
+  <div v-if="otherModal.open" class="modal-bg" @click.self="otherModal.open = false">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-1">รายรับอื่น</div>
+      <div class="text-xs text-slate-500 mb-3">สำหรับเงินที่ไม่ใช่ยา เช่น ทิป ค่าบริการ ไม่ตัดสต็อก</div>
+      <label class="lbl">รายการ</label><input v-model="otherModal.name" class="inp mb-3">
+      <label class="lbl">จำนวนเงิน (บาท)</label><input v-model.number="otherModal.amount" type="number" inputmode="decimal" class="inp mb-4">
+      <div class="grid grid-cols-2 gap-2">
+        <button class="btn btn-ghost" @click="otherModal.open = false">ยกเลิก</button>
+        <button class="btn btn-pri" @click="addOther">เพิ่มลงตะกร้า</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- รายละเอียดบิล -->
+  <div v-if="curSale" class="modal-bg" @click.self="saleDetailId = null">
+    <div class="modal p-5">
+      <div class="flex justify-between items-start mb-2">
+        <div><div class="font-bold text-lg">{{ curSale.no }}</div><div class="text-sm text-slate-500">{{ fmtDay(curSale.day) }} {{ fmtTime(curSale.ts) }}</div></div>
+        <button class="text-slate-400 text-2xl leading-none" @click="saleDetailId = null">&times;</button>
+      </div>
+      <div v-if="curSale.status === 'void'" class="p-2 rounded-lg mb-2 text-sm" style="background:#fee2e2;color:#b91c1c">
+        ยกเลิกแล้ว เหตุผล: {{ curSale.voidReason }}
+      </div>
+      <div v-for="(it, i) in curSale.items" :key="i" class="flex justify-between py-2 border-b text-sm" style="border-color:var(--line)">
+        <div>{{ it.name }} <span class="text-slate-500">× {{ it.qty }} @ ฿{{ money(it.price) }}</span></div>
+        <div class="num font-semibold">฿{{ money(it.qty * it.price) }}</div>
+      </div>
+      <div v-if="curSale.discount" class="flex justify-between py-2 text-sm text-slate-500"><span>ส่วนลด</span><span class="num">−฿{{ money(curSale.discount) }}</span></div>
+      <div class="flex justify-between py-2 text-lg font-bold"><span>รวม</span><span class="num">฿{{ money(curSale.total) }}</span></div>
+      <div class="text-sm text-slate-500 mb-3">
+        {{ curSale.method === 'cash' ? 'เงินสด รับมา ฿' + money(curSale.received) + ' ทอน ฿' + money(curSale.change) : 'รับโอน' }}
+      </div>
+      <div v-if="curSale.status === 'ok'">
+        <label class="lbl">เหตุผลที่ยกเลิก</label>
+        <select v-model="voidReason" class="inp mb-3">
+          <option>คีย์ผิด</option><option>ลูกค้าไม่เอา</option><option>ทอนเงินผิด</option><option>อื่นๆ</option>
+        </select>
+        <button class="btn btn-badline w-full" @click="voidFromHistory">ยกเลิกบิลนี้ (ต้องใส่รหัสผ่าน)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- รายละเอียดสินค้า + ปรับสต็อก -->
+  <div v-if="curProduct" class="modal-bg" @click.self="productModal = null">
+    <div class="modal">
+      <div class="sticky top-0 bg-white p-4 border-b flex justify-between items-start" style="border-color:var(--line)">
+        <div><div class="font-bold text-lg leading-normal">{{ curProduct.name }}</div><div class="text-sm text-slate-500">{{ curProduct.generic }}</div></div>
+        <button class="btn btn-ghost !min-h-0 !py-1 !px-3" @click="productModal = null">ปิด</button>
+      </div>
+      <div class="p-4 space-y-4">
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">คงเหลือ</div><div class="text-xl font-bold num">{{ stockMap[curProduct.id] || 0 }}</div></div>
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">ราคาขาย</div><div class="text-xl font-bold num">฿{{ money(curProduct.price) }}</div></div>
+          <div class="rounded-lg p-2" style="background:#eef3f2"><div class="text-xs text-slate-500">ทุนล่าสุด</div><div class="text-xl font-bold num">฿{{ money(costOf(curProduct)) }}</div></div>
+        </div>
+        <div v-if="curProduct.note" class="text-sm p-3 rounded-lg" style="background:#f8fafc;border:1px solid var(--line)">{{ curProduct.note }}</div>
+
+        <div v-if="curProduct.bundle">
+          <div class="font-bold mb-1">ตัวยาในชุด (ตัดสต็อกที่ยาแต่ละตัว)</div>
+          <button v-for="b in bundleParts" :key="b.c && b.c.id" class="card w-full text-left p-3 mb-2 flex justify-between items-center" @click="b.c && openProduct(b.c)">
+            <span>{{ b.c ? b.c.name : 'ไม่พบสินค้า' }} <span class="text-slate-500 text-sm">× {{ b.qty }} ต่อชุด</span></span>
+            <span class="num font-bold">{{ b.stock }}</span>
+          </button>
+          <div class="text-xs text-slate-500">ถ้าต้องรับของเข้าหรือปรับสต็อก ให้ทำที่ตัวยาแต่ละตัว</div>
+        </div>
+
+        <div v-if="!curProduct.bundle">
+          <div class="font-bold mb-1">ล็อตที่มีอยู่</div>
+          <div v-if="productLots.length === 0" class="text-sm text-slate-400">ไม่มีสินค้าในคลัง</div>
+          <div v-for="l in productLots" :key="l.id" class="flex justify-between text-sm py-1">
+            <span>{{ l.lotNo || (l.source === 'opening' ? 'ยอดยกมา' : (l.source === 'adjust' ? 'ปรับยอด' : 'ไม่ระบุล็อต')) }}
+              <span class="text-slate-500">{{ l.expiry ? 'หมดอายุ ' + fmtDay(l.expiry) : 'ไม่ระบุวันหมดอายุ' }}</span></span>
+            <span class="num font-semibold">{{ l.qtyLeft }}</span>
+          </div>
+        </div>
+
+        <div v-if="!curProduct.bundle" class="p-3 rounded-xl" style="background:#fffbeb;border:1px solid #fde68a">
+          <div class="font-bold mb-2">ปรับสต็อก (นับของจริงแล้วไม่ตรง)</div>
+          <label class="lbl">จำนวนที่นับได้จริง</label>
+          <div class="flex items-center gap-2 mb-2">
+            <button class="btn btn-ghost !min-h-0 w-11 h-11 !p-0 text-xl" @click="adj.counted = Math.max(0, (Number(adj.counted) || 0) - 1)">−</button>
+            <input v-model.number="adj.counted" type="number" inputmode="numeric" class="inp text-center text-xl font-bold">
+            <button class="btn btn-pri !min-h-0 w-11 h-11 !p-0 text-xl" @click="adj.counted = (Number(adj.counted) || 0) + 1">+</button>
+          </div>
+          <div class="text-sm mb-2" :class="adjDiff === 0 ? 'text-slate-500' : (adjDiff > 0 ? 'text-green-700' : 'text-red-600')">
+            {{ adjDiff === 0 ? 'ตรงกับในระบบ' : (adjDiff > 0 ? 'เพิ่มขึ้น ' + adjDiff : 'ลดลง ' + Math.abs(adjDiff)) }}
+          </div>
+          <select v-model="adj.reason" class="inp mb-2">
+            <option>นับสต็อกไม่ตรง</option><option>ยาหมดอายุ ทิ้ง</option><option>ยาเสียหาย</option><option>แจกตัวอย่าง / ใช้เอง</option><option>บันทึกรับเข้าผิด</option><option>อื่นๆ</option>
+          </select>
+          <input v-model="adj.note" class="inp mb-3" placeholder="หมายเหตุ (ถ้ามี)">
+          <button class="btn btn-dark w-full" :disabled="adjDiff === 0" @click="doAdjust">ยืนยันปรับสต็อก (ต้องใส่รหัสผ่าน)</button>
+        </div>
+
+        <div v-if="!curProduct.bundle">
+          <div class="font-bold mb-1">ประวัติเข้า-ออกล่าสุด</div>
+          <div v-if="productMoves.length === 0" class="text-sm text-slate-400">ยังไม่มีประวัติ</div>
+          <div v-for="m in productMoves" :key="m.id" class="flex justify-between text-sm py-1 border-b" style="border-color:#eef3f2">
+            <span><span class="text-slate-500">{{ fmtDay(dayKey(new Date(m.ts))) }} {{ fmtTime(m.ts) }}</span> {{ MOVE_LABEL[m.type] }} <span class="text-slate-500">{{ m.ref || m.note }}</span></span>
+            <span class="num font-semibold" :class="m.qty > 0 ? 'text-green-700' : 'text-red-600'">{{ m.qty > 0 ? '+' : '' }}{{ m.qty }}</span>
+          </div>
+        </div>
+        <button class="btn btn-ghost w-full" @click="openForm(curProduct)">แก้ไขชื่อ / ราคา / จุดสั่งซื้อ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ฟอร์มเพิ่ม/แก้สินค้า -->
+  <div v-if="formModal" class="modal-bg" @click.self="formModal = null">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-3">{{ formModal.isNew ? 'เพิ่มยา / สินค้าใหม่' : 'แก้ไขข้อมูลสินค้า' }}</div>
+      <div class="grid grid-cols-3 gap-3 mb-3">
+        <div><label class="lbl">รหัส</label><input v-model="formModal.code" class="inp"></div>
+        <div class="col-span-2"><label class="lbl">ชื่อการค้า</label><input v-model="formModal.name" class="inp"></div>
+      </div>
+      <label class="lbl">ชื่อสามัญ</label><input v-model="formModal.generic" class="inp mb-3">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div><label class="lbl">หมวด</label><select v-model="formModal.category" class="inp"><option v-for="c in CATS" :key="c">{{ c }}</option></select></div>
+        <div><label class="lbl">หน่วยขาย</label><input v-model="formModal.unit" class="inp" placeholder="แผง / ขวด / ซอง"></div>
+        <div><label class="lbl">ราคาขาย</label><input v-model.number="formModal.price" type="number" inputmode="decimal" class="inp"></div>
+        <div><label class="lbl">ราคาทุน</label><input v-model.number="formModal.cost" type="number" inputmode="decimal" class="inp"></div>
+        <div><label class="lbl">เตือนเมื่อเหลือไม่เกิน</label><input v-model.number="formModal.reorder" type="number" inputmode="numeric" class="inp"></div>
+      </div>
+      <label class="lbl">หมายเหตุ / วิธีใช้</label><input v-model="formModal.note" class="inp mb-3">
+      <div class="mb-4 p-3 rounded-xl" style="background:#f8fafc;border:1px solid var(--line)">
+        <label class="flex items-center gap-2 font-semibold"><input type="checkbox" v-model="formModal.isBundle" class="w-5 h-5"> เป็นยาชุด (ประกอบจากยาตัวอื่น)</label>
+        <div v-if="formModal.isBundle" class="mt-3">
+          <div class="text-xs text-slate-500 mb-2">เลือกยาที่อยู่ในชุด และจำนวนต่อ 1 ชุด เวลาขายชุดจะตัดสต็อกที่ยาแต่ละตัว</div>
+          <div v-for="(part, i) in formModal.parts" :key="i" class="flex gap-2 mb-2 items-center">
+            <select v-model="part.pid" class="inp"><option value="">เลือกยา</option><option v-for="bp in bundleChoices" :key="bp.id" :value="bp.id">{{ bp.code }} {{ bp.name }}</option></select>
+            <input v-model.number="part.qty" type="number" inputmode="numeric" class="inp !w-16 text-center">
+            <button class="text-red-500 font-bold px-2" @click="formModal.parts.splice(i, 1)">ลบ</button>
+          </div>
+          <button class="btn btn-ghost !min-h-0 !py-2 text-sm" @click="formModal.parts.push({ pid: '', qty: 1 })">+ เพิ่มตัวยาในชุด</button>
+        </div>
+      </div>
+      <div v-if="formModal.isNew && !formModal.isBundle" class="mb-4">
+        <label class="lbl">จำนวนที่มีอยู่ตอนนี้ (สต็อกตั้งต้น)</label>
+        <input v-model.number="formModal.openQty" type="number" inputmode="numeric" class="inp" placeholder="0">
+        <div class="text-xs text-slate-500 mt-1">ไม่ใส่ = เริ่มที่ 0 แล้วค่อยรับเข้าที่แท็บรับของเข้าได้</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button class="btn btn-ghost" @click="formModal = null">ยกเลิก</button>
+        <button class="btn btn-pri" @click="saveForm">บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- รหัสผ่าน -->
+  <div v-if="pin.open" class="modal-bg" style="z-index:70" @click.self="pin.open = false">
+    <div class="modal p-5">
+      <div class="font-bold text-lg">{{ pin.title }}</div>
+      <div class="text-sm text-slate-500 mb-3">ใส่รหัสผ่านเพื่อยืนยัน</div>
+      <input ref="pinInput" v-model="pin.value" @keyup.enter="submitPin" type="password" inputmode="numeric" class="inp text-center text-2xl tracking-widest" placeholder="••••">
+      <div v-if="pin.error" class="text-red-600 text-sm mt-2 text-center">{{ pin.error }}</div>
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        <button class="btn btn-ghost" @click="pin.open = false">ยกเลิก</button>
+        <button class="btn btn-pri" @click="submitPin">ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ยืนยันทั่วไป -->
+  <div v-if="confirmBox.open" class="modal-bg" style="z-index:70">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-1">{{ confirmBox.title }}</div>
+      <div class="text-slate-600 mb-4">{{ confirmBox.message }}</div>
+      <div class="grid grid-cols-2 gap-2">
+        <button class="btn btn-ghost" @click="confirmBox.open = false">ไม่ใช่</button>
+        <button class="btn btn-bad" @click="runConfirm">{{ confirmBox.okText }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div v-if="toastMsg.text" class="fixed left-1/2 -translate-x-1/2 top-4 z-[90] px-4 py-3 rounded-xl shadow-lg text-white font-semibold max-w-[90vw]"
+       :style="toastMsg.kind === 'bad' ? 'background:#b91c1c' : 'background:#0f3f3a'">{{ toastMsg.text }}</div>
+</div>
+
+<script>
+/* =====================================================================
+   ส่วนที่ 1: ข้อมูลตั้งต้น (จากไฟล์ Excel: ชีตสต๊อก)
+   ===================================================================== */
+const CATS = ['แก้ปวด', 'หวัด/แพ้/ไอ', 'ฆ่าเชื้อ', 'ยาตา', 'กระเพาะ/ท้อง', 'ผิวหนัง', 'อาหารเสริม', 'อื่นๆ']
+const MOVE_LABEL = { opening: 'ยอดยกมา', receive: 'รับเข้า', sale: 'ขาย', void: 'คืนจากบิลที่ยกเลิก', adjust: 'ปรับสต็อก' }
+const SEED = [
+  ['01','ชุดคลายเส้น (3 เม็ด)','Diclofenac + piroxicam + norgesic','แก้ปวด','ชุด',1.6,5,0,0,'ยาชุด 1 ชุด = ยา 3 เม็ด (รหัส 46, 47, 48) ชุดละ 5 บาท ตัดสต็อกที่ยาแต่ละตัว'],
+  ['02','Buflex แผง','Ibuprofen 400 mg','แก้ปวด','แผง',12,30,4,1,''],
+  ['03','Volta แผง','Diclofenac 25 mg','แก้ปวด','แผง',5,30,4,1,''],
+  ['04','Nuosic แผง','Paracetamol + orphenadrine','แก้ปวด','แผง',12,20,4,1,''],
+  ['05','Celebrex 200 mg แผง','Celecoxib','แก้ปวด','แผง',240,285,2,1,''],
+  ['06','Mancoxib 90 mg แผง','Etoricoxib','แก้ปวด','แผง',80,120,2,1,''],
+  ['07','Loranox แผง','Loratadine','หวัด/แพ้/ไอ','แผง',20,30,3,1,''],
+  ['08','Nasotapp แผง','Brompheniramine + phenylephrine','หวัด/แพ้/ไอ','แผง',20,30,3,1,''],
+  ['09','Startussin แผง','Dextromethorphan + guaifenesin','หวัด/แพ้/ไอ','แผง',20,30,3,1,''],
+  ['10','Soproxen แผง','Naproxen','แก้ปวด','แผง',25,40,3,1,''],
+  ['11','Mysoven 600 mg ซอง','Acetylcysteine','หวัด/แพ้/ไอ','ซอง',10,20,3,1,''],
+  ['12','T.V.mox 500 mg แผง','Amoxicillin','ฆ่าเชื้อ','แผง',20,30,8,2,'เจ็บคอ'],
+  ['13','AMK แผง','Amoxicillin + clavulanate','ฆ่าเชื้อ','แผง',100,150,2,1,'เจ็บคอมากๆ'],
+  ['14','Atozin แผง 6 เม็ด','Azithromycin','ฆ่าเชื้อ','แผง',80,120,2,1,'เจ็บคอ'],
+  ['15','Cobay แผง','Ciprofloxacin','ฆ่าเชื้อ','แผง',30,50,2,1,'ฉี่แสบ'],
+  ['16','Metronidazole แผง','Metronidazole','ฆ่าเชื้อ','แผง',15,30,2,1,'ปวดฟัน'],
+  ['17','Opthazoline ขวด','Antazoline','ยาตา','ขวด',45,55,1,1,''],
+  ['18','Poly-oph ขวด','Neomycin + polymyxin B','ยาตา','ขวด',30,45,2,1,''],
+  ['19','Dex-oph ขวด','Dexamethasone','ยาตา','ขวด',30,45,2,1,''],
+  ['20','Terramycin ป้ายตา หลอด','Oxytetracycline','ยาตา','หลอด',30,45,1,1,''],
+  ['21','Miltear ขวด','Hypromellose','ยาตา','ขวด',80,100,1,1,''],
+  ['22','Opplin ขวด','น้ำยาล้างตา','ยาตา','ขวด',40,55,2,1,''],
+  ['23','Miracid แผง','Omeprazole','กระเพาะ/ท้อง','แผง',20,30,5,1,''],
+  ['24','Gaviscon เขียว ซอง','Gaviscon','กระเพาะ/ท้อง','ซอง',20,26,12,3,''],
+  ['25','Amogin gel ขวด','Aluminium + magnesium','กระเพาะ/ท้อง','ขวด',45,55,1,1,''],
+  ['26','M-flox แผง','Norfloxacin','ฆ่าเชื้อ','แผง',25,40,3,1,''],
+  ['27','Fotagel ซอง','Smectite','กระเพาะ/ท้อง','ซอง',27,40,3,1,''],
+  ['28','Mirax-m แผง','Domperidone','กระเพาะ/ท้อง','แผง',10,30,5,1,''],
+  ['29','Hyoscine star แผง','Hyoscine','กระเพาะ/ท้อง','แผง',20,35,5,1,''],
+  ['30','Diarene แผง','Loperamide','กระเพาะ/ท้อง','แผง',8,20,2,1,''],
+  ['31','U-spa แผง','Flavoxate','อื่นๆ','แผง',45,60,2,1,''],
+  ['32','Gabapentin GPO แผง','Gabapentin','อื่นๆ','แผง',25,45,3,1,''],
+  ['33','MOM CB ขวด','Magnesium','กระเพาะ/ท้อง','ขวด',35,50,1,1,''],
+  ['34','Maxxlife Mag-cal ซอง','บำรุงกระดูก ป้องกันไมเกรน','อาหารเสริม','ซอง',20,30,3,1,''],
+  ['35','Maxxlife Ginkgo กระปุก','เสริมความจำ บำรุงสมอง','อาหารเสริม','กระปุก',320,380,1,1,''],
+  ['37','Ninazol cream หลอด','Ketoconazole','ผิวหนัง','หลอด',40,55,0,1,''],
+  ['38','Ninazol shampoo ขวด','Ketoconazole','ผิวหนัง','ขวด',65,85,0,1,''],
+  ['39','Acnetin cream 0.025%','Tretinoin','ผิวหนัง','หลอด',45,60,0,1,''],
+  ['40','Rest spray ขวด','Indomethacin','แก้ปวด','ขวด',140,180,1,1,''],
+  ['41','Fluoxetine 20 mg แผง','Fluoxetine','อื่นๆ','แผง',15,40,2,1,''],
+  ['42','Amitriptyline 25 mg แผง','Amitriptyline','อื่นๆ','แผง',12,30,2,1,''],
+  ['43','Maxxlife Hap-pe กล่อง 10 เม็ด','ปรับอารมณ์ ช่วยนอนหลับ','อาหารเสริม','กล่อง',310,360,1,1,''],
+  ['44','GD-1 สาหร่ายเกลียวทอง กระปุก','เสริมโปรตีน','อาหารเสริม','กระปุก',320,380,1,1,''],
+  ['45','Maxxlife Glucosamine ซอง','ข้อเข่าเสื่อม ลดปวด','อาหารเสริม','ซอง',11,15,30,5,''],
+  ['46','Diclofenac เม็ด (ยาชุดคลายเส้น)','Diclofenac','แก้ปวด','เม็ด',0.53,2,100,20,'ตัวยาในชุดคลายเส้น ขายแยกเม็ดละ 2 บาท'],
+  ['47','Piroxicam เม็ด (ยาชุดคลายเส้น)','Piroxicam','แก้ปวด','เม็ด',0.53,2,100,20,'ตัวยาในชุดคลายเส้น ขายแยกเม็ดละ 2 บาท'],
+  ['48','Norgesic เม็ด (ยาชุดคลายเส้น)','Orphenadrine + paracetamol','แก้ปวด','เม็ด',0.54,2,100,20,'ตัวยาในชุดคลายเส้น ขายแยกเม็ดละ 2 บาท']
+]
+
+/* =====================================================================
+   ส่วนที่ 2: ตัวช่วยเล็กๆ
+   ===================================================================== */
+const pad = n => String(n).padStart(2, '0')
+const R2 = n => Math.round((Number(n) || 0) * 100) / 100
+const R4 = n => Math.round((Number(n) || 0) * 10000) / 10000
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+const dayKey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+const daysUntil = e => {
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  return Math.round((new Date(e + 'T00:00:00') - t) / 86400000)
+}
+
+function makeSeed() {
+  const ts = new Date().toISOString()
+  const S = { products: [], lots: [], movements: [], sales: [], receipts: [], closings: [],
+              seq: { sale: 0 }, settings: { pin: '1234', shopName: 'บ้านยาต้นปู๋', nearExpiryDays: 90 } }
+  for (const r of SEED) {
+    const p = { id: 'p' + r[0], code: r[0], name: r[1], generic: r[2], category: r[3], unit: r[4],
+                cost: r[5], price: r[6], reorder: r[8], note: r[9], active: true }
+    S.products.push(p)
+    if (r[7] > 0) {
+      const lot = { id: uid(), pid: p.id, lotNo: '', expiry: '', qtyIn: r[7], qtyLeft: r[7], cost: p.cost, receivedAt: ts, source: 'opening' }
+      S.lots.push(lot)
+      S.movements.push({ id: uid(), ts, pid: p.id, type: 'opening', qty: r[7], lotId: lot.id, ref: '', note: 'ยอดยกมาจาก Excel' })
+    }
+  }
+  const kit = S.products.find(p => p.id === 'p01')
+  kit.bundle = [{ pid: 'p46', qty: 1 }, { pid: 'p47', qty: 1 }, { pid: 'p48', qty: 1 }]
+  return S
+}
+
+/* =====================================================================
+   ส่วนที่ 3: ที่เก็บข้อมูล (เชื่อมต่อ Supabase)
+   ===================================================================== */
+const supabaseUrl = 'https://snzhaqfffsueowqznqmm.supabase.co'
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuemhhcWZmZnN1ZW93cXpucW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3ODQ0MTEsImV4cCI6MjEwNTM2MDQxMX0.fnpvOwJntI5x1Ss5sA8MG5ZR8wLq1TBu7b8t-qbcBDI'
+const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
+
+const STORAGE_KEY = 'knockdown_pos_v5'
+const Storage = {
+  ok: true,
+  async loadFromCloud() {
+    try {
+      const { data, error } = await _supabase.from('app_state').select('data').eq('id', 1).single()
+      if (data && data.data) return data.data
+    } catch (e) { console.error(e) }
+    return null
+  },
+  async saveToCloud(S) {
+    try { await _supabase.from('app_state').upsert({ id: 1, data: S }) }
+    catch (e) { console.error(e) }
+  },
+  loadLocal() {
+    try { const t = localStorage.getItem(STORAGE_KEY); return t ? JSON.parse(t) : null }
+    catch (e) { return null }
+  },
+  saveLocal(S) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); this.ok = true }
+    catch (e) { this.ok = false }
+  }
+}
+
+/* =====================================================================
+   ส่วนที่ 4: กฎของสต็อกและเงิน 
+   ===================================================================== */
+const Logic = {
+  stockOf(S, pid) {
+    const p = S.products.find(x => x.id === pid)
+    if (p && p.bundle && p.bundle.length) return Math.min(...p.bundle.map(b => Math.floor(this.stockOf(S, b.pid) / b.qty)))
+    return S.lots.reduce((s, l) => l.pid === pid ? s + l.qtyLeft : s, 0)
+  },
+  isBundle(S, pid) { const p = S.products.find(x => x.id === pid); return !!(p && p.bundle && p.bundle.length) },
+  lotsFEFO(S, pid) {
+    return S.lots.filter(l => l.pid === pid && l.qtyLeft > 0).sort((a, b) =>
+      (a.expiry || '9999-99-99').localeCompare(b.expiry || '9999-99-99') || a.receivedAt.localeCompare(b.receivedAt))
+  },
+  take(S, pid, qty, ctx) {
+    if (this.isBundle(S, pid)) throw new Error('ยาชุดตัดสต็อกโดยตรงไม่ได้')
+    if (this.stockOf(S, pid) < qty) throw new Error('สต็อกไม่พอ')
+    let need = qty, costTotal = 0
+    const allocs = []
+    for (const lot of this.lotsFEFO(S, pid)) {
+      if (need <= 0) break
+      const q = Math.min(lot.qtyLeft, need)
+      lot.qtyLeft -= q; need -= q
+      allocs.push({ lotId: lot.id, qty: q, cost: lot.cost, pid })
+      costTotal += q * lot.cost
+      S.movements.push({ id: uid(), ts: ctx.ts, pid, type: ctx.type, qty: -q, lotId: lot.id, ref: ctx.ref || '', note: ctx.note || '' })
+    }
+    return { allocs, costTotal: R2(costTotal) }
+  },
+  commitSale(S, { items, discount, method, received }) {
+    if (!items.length) throw new Error('ตะกร้าว่าง')
+    const need = {}
+    for (const i of items) {
+      if (!i.pid) continue
+      const p = S.products.find(x => x.id === i.pid)
+      if (p && p.bundle && p.bundle.length) for (const b of p.bundle) need[b.pid] = (need[b.pid] || 0) + b.qty * i.qty
+      else need[i.pid] = (need[i.pid] || 0) + i.qty
+    }
+    for (const pid in need) {
+      const have = this.stockOf(S, pid)
+      if (have < need[pid]) {
+        const p = S.products.find(x => x.id === pid)
+        throw new Error('สต็อก ' + (p ? p.name : '') + ' ไม่พอ (เหลือ ' + have + ')')
+      }
+    }
+    const subtotal = R2(items.reduce((s, i) => s + i.qty * i.price, 0))
+    const disc = Math.min(Math.max(Number(discount) || 0, 0), subtotal)
+    const total = R2(subtotal - disc)
+    if (method === 'cash' && (Number(received) || 0) < total) throw new Error('รับเงินไม่พอ')
+
+    const ts = new Date().toISOString()
+    S.seq.sale += 1
+    const no = 'B' + String(S.seq.sale).padStart(5, '0')
+    const lines = items.map(i => {
+      if (i.pid) {
+        const p = S.products.find(x => x.id === i.pid)
+        const parts = p && p.bundle && p.bundle.length ? p.bundle : [{ pid: i.pid, qty: 1 }]
+        let allocs = [], costTotal = 0
+        for (const c of parts) {
+          const t = this.take(S, c.pid, c.qty * i.qty, { ts, type: 'sale', ref: no, note: parts.length > 1 || p.bundle ? 'ในชุด ' + i.name : '' })
+          allocs = allocs.concat(t.allocs); costTotal += t.costTotal
+        }
+        return { pid: i.pid, name: i.name, unit: i.unit, qty: i.qty, price: i.price, costTotal: R2(costTotal), allocs }
+      }
+      return { pid: null, name: i.name, unit: '', qty: i.qty, price: i.price, costTotal: 0, allocs: [], other: true }
+    })
+    const recv = method === 'cash' ? R2(received) : total
+    const sale = { id: uid(), no, ts, day: dayKey(new Date(ts)), items: lines, subtotal, discount: disc, total,
+                   method, received: recv, change: R2(recv - total), status: 'ok' }
+    S.sales.push(sale)
+    return sale
+  },
+  voidSale(S, saleId, reason) {
+    const sale = S.sales.find(s => s.id === saleId)
+    if (!sale) throw new Error('ไม่พบบิล')
+    if (sale.status !== 'ok') throw new Error('บิลนี้ถูกยกเลิกไปแล้ว')
+    const ts = new Date().toISOString()
+    for (const line of sale.items) {
+      for (const a of line.allocs) {
+        const lot = S.lots.find(l => l.id === a.lotId)
+        if (lot) lot.qtyLeft += a.qty
+        S.movements.push({ id: uid(), ts, pid: a.pid || line.pid, type: 'void', qty: a.qty, lotId: a.lotId, ref: sale.no, note: reason || '' })
+      }
+    }
+    sale.status = 'void'; sale.voidTs = ts; sale.voidReason = reason || ''
+    return sale
+  },
+  receive(S, { invoice, supplier, day, items }) {
+    if (!items.length) throw new Error('ยังไม่มีรายการ')
+    for (const it of items) {
+      const p = S.products.find(x => x.id === it.pid)
+      if (!p) throw new Error('ไม่พบสินค้า')
+      if (p.bundle && p.bundle.length) throw new Error(p.name + ' เป็นยาชุด ให้รับเข้าที่ตัวยาแต่ละตัว')
+      if (Math.floor(Number(it.qty) || 0) <= 0) throw new Error('จำนวนของ ' + p.name + ' ต้องมากกว่า 0')
+      if ((Number(it.unitCost) || 0) < 0) throw new Error('ราคารับของ ' + p.name + ' ไม่ถูกต้อง')
+    }
+    const ts = new Date().toISOString()
+    const rows = []
+    for (const it of items) {
+      const p = S.products.find(x => x.id === it.pid)
+      const qty = Math.floor(Number(it.qty))
+      const unitCost = R4(it.unitCost)
+      const lot = { id: uid(), pid: p.id, lotNo: (it.lotNo || '').trim(), expiry: it.expiry || '', qtyIn: qty, qtyLeft: qty, cost: unitCost, receivedAt: ts, source: 'receive' }
+      S.lots.push(lot)
+      S.movements.push({ id: uid(), ts, pid: p.id, type: 'receive', qty, lotId: lot.id, ref: invoice || '', note: supplier || '' })
+      p.cost = unitCost
+      rows.push({ pid: p.id, name: p.name, unit: p.unit, qty, unitCost, lotNo: lot.lotNo, expiry: lot.expiry })
+    }
+    const rc = { id: uid(), ts, day: day || dayKey(new Date()), invoice: invoice || '', supplier: supplier || '',
+                 items: rows, total: R2(rows.reduce((s, r) => s + r.qty * r.unitCost, 0)) }
+    S.receipts.push(rc)
+    return rc
+  },
+  openStock(S, pid, qty, cost) {
+    const ts = new Date().toISOString()
+    const lot = { id: uid(), pid, lotNo: '', expiry: '', qtyIn: qty, qtyLeft: qty, cost: R4(cost), receivedAt: ts, source: 'opening' }
+    S.lots.push(lot)
+    S.movements.push({ id: uid(), ts, pid, type: 'opening', qty, lotId: lot.id, ref: '', note: 'สต็อกตั้งต้นตอนเพิ่มสินค้า' })
+  },
+  adjust(S, pid, counted, reason, note) {
+    const p = S.products.find(x => x.id === pid)
+    if (!p) throw new Error('ไม่พบสินค้า')
+    if (p.bundle && p.bundle.length) throw new Error('ยาชุดปรับสต็อกที่ตัวยาแต่ละตัว')
+    counted = Math.floor(Number(counted))
+    if (!(counted >= 0)) throw new Error('จำนวนไม่ถูกต้อง')
+    const diff = counted - this.stockOf(S, pid)
+    if (diff === 0) throw new Error('จำนวนเท่าเดิม')
+    const ts = new Date().toISOString()
+    const label = reason + (note ? ' - ' + note : '')
+    if (diff > 0) {
+      const lot = { id: uid(), pid, lotNo: '', expiry: '', qtyIn: diff, qtyLeft: diff, cost: p.cost, receivedAt: ts, source: 'adjust' }
+      S.lots.push(lot)
+      S.movements.push({ id: uid(), ts, pid, type: 'adjust', qty: diff, lotId: lot.id, ref: '', note: label })
+    } else {
+      this.take(S, pid, -diff, { ts, type: 'adjust', note: label })
+    }
+    return diff
+  },
+  dayReport(S, day) {
+    const list = S.sales.filter(s => s.day === day)
+    const ok = list.filter(s => s.status === 'ok')
+    const voided = list.filter(s => s.status === 'void')
+    const sum = (arr, f) => R2(arr.reduce((t, x) => t + f(x), 0))
+    const top = {}
+    let costs = 0, other = 0
+    for (const s of ok) {
+      for (const l of s.items) {
+        costs += l.costTotal
+        if (l.other) other += l.qty * l.price
+        else top[l.name] = (top[l.name] || 0) + l.qty
+      }
+    }
+    const total = sum(ok, s => s.total)
+    return {
+      count: ok.length, total,
+      cash: sum(ok.filter(s => s.method === 'cash'), s => s.total),
+      transfer: sum(ok.filter(s => s.method === 'transfer'), s => s.total),
+      other: R2(other), profit: R2(total - costs),
+      voidCount: voided.length, voidTotal: sum(voided, s => s.total),
+      top: Object.keys(top).map(name => ({ name, qty: top[name] })).sort((a, b) => b.qty - a.qty).slice(0, 5)
+    }
+  }
+}
+
+/* =====================================================================
+   ส่วนที่ 5: หน้าจอ (Vue)
+   ===================================================================== */
+const { createApp } = Vue
+createApp({
+  data() {
+    const today = dayKey(new Date())
+    return {
+      isLoading: true, saveTimer: null,
+      S: makeSeed(), storageOk: true, CATS, MOVE_LABEL,
+      tabs: [{ id: 'pos', name: 'ขาย' }, { id: 'history', name: 'บิล' }, { id: 'stock', name: 'คลังสินค้า' },
+             { id: 'receive', name: 'รับของเข้า' }, { id: 'report', name: 'ปิดวัน' }, { id: 'settings', name: 'ตั้งค่า' }],
+      tab: 'pos',
+      search: '', cat: 'ทั้งหมด', cart: [], discount: '', cartOpen: false,
+      payModal: { open: false, method: 'cash', received: '' }, resultSale: null, editPriceKey: null,
+      otherModal: { open: false, name: 'ทิป / รายรับอื่น', amount: '' },
+      histDay: today, saleDetailId: null, voidReason: 'คีย์ผิด',
+      invSearch: '', invFilter: 'all', productModal: null, adj: { counted: 0, reason: 'นับสต็อกไม่ตรง', note: '' }, formModal: null,
+      rcv: { invoice: '', supplier: '', day: today, items: [] }, rcvSearch: '', rcvOpen: false,
+      repDay: today, openFloat: '', cashCounted: '', closeNote: '',
+      pinForm: { old: '', next: '' }, backupText: '',
+      pin: { open: false, title: '', value: '', error: '', cb: null },
+      confirmBox: { open: false, title: '', message: '', okText: 'ยืนยัน', cb: null },
+      toastMsg: { text: '', kind: 'ok' }, toastTimer: null
+    }
+  },
+
+  computed: {
+    todayLabel() { return new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) },
+    activeProducts() { return this.S.products.filter(p => p.active !== false) },
+    stockMap() {
+      const m = {}
+      for (const l of this.S.lots) m[l.pid] = (m[l.pid] || 0) + l.qtyLeft
+      for (const p of this.S.products) if (p.bundle && p.bundle.length) m[p.id] = Math.min(...p.bundle.map(b => Math.floor((m[b.pid] || 0) / b.qty)))
+      return m
+    },
+    cartUse() {
+      const u = {}
+      for (const i of this.cart) {
+        if (!i.pid) continue
+        const p = this.S.products.find(x => x.id === i.pid)
+        if (p && p.bundle && p.bundle.length) for (const b of p.bundle) u[b.pid] = (u[b.pid] || 0) + b.qty * i.qty
+        else u[i.pid] = (u[i.pid] || 0) + i.qty
+      }
+      return u
+    },
+    bundleChoices() { return this.activeProducts.filter(p => !(p.bundle && p.bundle.length) && (!this.formModal || p.id !== this.formModal.id)) },
+    bundleParts() {
+      const p = this.curProduct
+      if (!p || !p.bundle) return []
+      return p.bundle.map(b => { const c = this.S.products.find(x => x.id === b.pid); return { c, qty: b.qty, stock: c ? (this.stockMap[c.id] || 0) : 0 } })
+    },
+    expiryMap() {
+      const m = {}
+      for (const l of this.S.lots) if (l.qtyLeft > 0 && l.expiry && (!m[l.pid] || l.expiry < m[l.pid])) m[l.pid] = l.expiry
+      return m
+    },
+
+    posList() {
+      const q = this.search.trim().toLowerCase()
+      return this.activeProducts.filter(p =>
+        (this.cat === 'ทั้งหมด' || p.category === this.cat) &&
+        (!q || p.name.toLowerCase().includes(q) || p.generic.toLowerCase().includes(q) || p.code.includes(q)))
+    },
+    cartCount() { return this.cart.reduce((s, i) => s + i.qty, 0) },
+    subtotal() { return R2(this.cart.reduce((s, i) => s + (Number(i.price) || 0) * i.qty, 0)) },
+    discountAmt() { return Math.min(Math.max(Number(this.discount) || 0, 0), this.subtotal) },
+    total() { return R2(this.subtotal - this.discountAmt) },
+    quickCash() { return [20, 50, 100, 500, 1000].filter(v => v >= this.total && v !== this.total) },
+    cashChange() { return R2((Number(this.payModal.received) || 0) - this.total) },
+    canPay() { return this.payModal.method === 'transfer' || (this.payModal.received !== '' && this.cashChange >= 0) },
+
+    histSales() { return this.S.sales.filter(s => s.day === this.histDay).sort((a, b) => b.ts.localeCompare(a.ts)) },
+    histReport() { return Logic.dayReport(this.S, this.histDay) },
+    curSale() { return this.S.sales.find(s => s.id === this.saleDetailId) || null },
+
+    invAll() {
+      const nd = Number(this.S.settings.nearExpiryDays) || 90
+      return this.activeProducts.map(p => {
+        const stock = this.stockMap[p.id] || 0, exp = this.expiryMap[p.id] || ''
+        const days = exp ? daysUntil(exp) : null
+        const kit = !!(p.bundle && p.bundle.length)
+        return { p, stock, exp, days, out: !kit && stock <= 0, low: !kit && stock > 0 && stock <= (Number(p.reorder) || 0), near: days !== null && days <= nd }
+      })
+    },
+    invCount() { return { low: this.invAll.filter(r => r.low).length, out: this.invAll.filter(r => r.out).length, near: this.invAll.filter(r => r.near).length } },
+    alertCount() { return this.invCount.low + this.invCount.out + this.invAll.filter(r => r.near).length },
+    invRows() {
+      const q = this.invSearch.trim().toLowerCase()
+      return this.invAll.filter(r =>
+        (this.invFilter === 'all' || (this.invFilter === 'low' && r.low) || (this.invFilter === 'out' && r.out) || (this.invFilter === 'near' && r.near)) &&
+        (!q || r.p.name.toLowerCase().includes(q) || r.p.generic.toLowerCase().includes(q) || r.p.code.includes(q)))
+    },
+    curProduct() { return this.S.products.find(p => p.id === this.productModal) || null },
+    productLots() { return this.S.lots.filter(l => l.pid === this.productModal && l.qtyLeft > 0).sort((a, b) => (a.expiry || '9999').localeCompare(b.expiry || '9999')) },
+    productMoves() { return this.S.movements.filter(m => m.pid === this.productModal).slice(-12).reverse() },
+    adjDiff() { return this.curProduct ? (Math.floor(Number(this.adj.counted)) || 0) - (this.stockMap[this.curProduct.id] || 0) : 0 },
+
+    rcvResults() {
+      const q = this.rcvSearch.trim().toLowerCase()
+      return this.activeProducts.filter(p => !(p.bundle && p.bundle.length) && (p.name.toLowerCase().includes(q) || p.generic.toLowerCase().includes(q) || p.code.includes(q))).slice(0, 20)
+    },
+    rcvTotal() { return R2(this.rcv.items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitCost) || 0), 0)) },
+    recentReceipts() { return this.S.receipts.slice(-6).reverse() },
+
+    rep() { return Logic.dayReport(this.S, this.repDay) },
+    cashExpected() { return R2((Number(this.openFloat) || 0) + this.rep.cash) },
+    cashDiff() { return R2((Number(this.cashCounted) || 0) - this.cashExpected) },
+    savedClosing() { return this.S.closings.find(c => c.day === this.repDay) || null }
+  },
+
+  watch: {
+    S: {
+      deep: true,
+      handler() {
+        if (this.isLoading) return
+        Storage.saveLocal(this.S)
+        this.storageOk = Storage.ok
+        clearTimeout(this.saveTimer)
+        this.saveTimer = setTimeout(() => { Storage.saveToCloud(this.S) }, 1500)
+      }
+    },
+    repDay() { this.loadClosing() },
+    'pin.open'(v) { if (v) this.$nextTick(() => this.$refs.pinInput && this.$refs.pinInput.focus()) }
+  },
+
+  async mounted() {
+    try {
+      const cloud = await Storage.loadFromCloud()
+      if (cloud && cloud.products) {
+        this.S = cloud
+      } else {
+        const local = Storage.loadLocal()
+        if (local && local.products) this.S = local
+      }
+    } catch (e) { console.error(e) }
+    this.isLoading = false
+    this.storageOk = Storage.ok
+    this.loadClosing()
+  },
+
+  methods: {
+    dayKey,
+    money(n) { return (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) },
+    fmtTime(iso) { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) },
+    fmtDay(d) { return new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) },
+    fmtExp(d) { return new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }) },
+    saleSummary(s) { return s.items.map(i => i.name + ' ×' + i.qty).join(', ') },
+    toast(text, kind) {
+      this.toastMsg = { text, kind: kind || 'ok' }
+      clearTimeout(this.toastTimer)
+      this.toastTimer = setTimeout(() => { this.toastMsg.text = '' }, 2600)
+    },
+    goTab(id) { this.tab = id; this.cartOpen = false; if (id === 'report') this.loadClosing() },
+    askPin(title, cb) { this.pin = { open: true, title, value: '', error: '', cb } },
+    submitPin() {
+      if (this.pin.value === this.S.settings.pin) { const cb = this.pin.cb; this.pin.open = false; cb && cb() }
+      else this.pin.error = 'รหัสผ่านไม่ถูกต้อง'
+    },
+    askConfirm(title, message, okText, cb) { this.confirmBox = { open: true, title, message, okText: okText || 'ยืนยัน', cb } },
+    runConfirm() { const cb = this.confirmBox.cb; this.confirmBox.open = false; cb && cb() },
+
+    // ===== ขาย =====
+    availFor(p) {
+      if (p.bundle && p.bundle.length) return Math.min(...p.bundle.map(b => Math.floor(((this.stockMap[b.pid] || 0) - (this.cartUse[b.pid] || 0)) / b.qty)))
+      return (this.stockMap[p.id] || 0) - (this.cartUse[p.id] || 0)
+    },
+    costOf(p) { return p.bundle && p.bundle.length ? R2(p.bundle.reduce((s, b) => { const c = this.S.products.find(x => x.id === b.pid); return s + (c ? c.cost * b.qty : 0) }, 0)) : p.cost },
+    lineTotal(i) { return R2((Number(i.price) || 0) * i.qty) },
+    addToCart(p) {
+      if (this.availFor(p) <= 0) return this.toast('สต็อกหมดแล้ว ถ้าของจริงยังมี ให้ปรับสต็อกก่อน', 'bad')
+      const it = this.cart.find(i => i.pid === p.id)
+      if (it) it.qty++
+      else this.cart.push({ key: uid(), pid: p.id, name: p.name, unit: p.unit, qty: 1, price: p.price })
+    },
+    onSearchEnter() {
+      const q = this.search.trim().toLowerCase()
+      if (!q) return
+      const exact = this.activeProducts.find(p => p.code === q || (/^\d+$/.test(q) && Number(p.code) === Number(q)))
+      const hit = exact || (this.posList.length === 1 ? this.posList[0] : null)
+      if (hit) { this.addToCart(hit); this.search = '' }
+      else if (this.posList.length > 1) this.toast('พบหลายรายการ เลือกจากรายการด้านล่าง')
+    },
+    changeQty(i, d) { this.setQty(i, this.cart[i].qty + d) },
+    setQty(i, v) {
+      const it = this.cart[i]
+      let q = Math.floor(Number(v)) || 0
+      if (q <= 0) { this.cart.splice(i, 1); return }
+      if (it.pid) {
+        const prod = this.S.products.find(x => x.id === it.pid)
+        const max = it.qty + (prod ? this.availFor(prod) : 0)
+        if (q > max) { q = max; this.toast('สต็อกมีแค่ ' + max, 'bad') }
+      }
+      it.qty = q
+    },
+    removeItem(i) { this.cart.splice(i, 1) },
+    clearCart() { this.askConfirm('ล้างตะกร้า?', 'รายการในตะกร้าทั้งหมดจะถูกลบ (ยังไม่ตัดสต็อก)', 'ล้างตะกร้า', () => { this.cart = []; this.discount = '' }) },
+    addOther() {
+      const amt = Number(this.otherModal.amount) || 0
+      if (amt <= 0) return this.toast('ใส่จำนวนเงินก่อน', 'bad')
+      this.cart.push({ key: uid(), pid: null, name: this.otherModal.name || 'รายรับอื่น', unit: '', qty: 1, price: amt })
+      this.otherModal.open = false
+    },
+    openPay(method) {
+      if (!this.cart.length) return
+      if (this.cart.some(i => (Number(i.price) || 0) < 0)) return this.toast('มีรายการที่ราคาติดลบ', 'bad')
+      this.editPriceKey = null
+      this.payModal = { open: true, method: method || 'cash', received: this.total }
+    },
+    startEditPrice(item) {
+      this.editPriceKey = item.key
+      this.$nextTick(() => { const el = document.getElementById('price-' + item.key); if (el) { el.focus(); el.select() } })
+    },
+    confirmPay() {
+      try {
+        const items = this.cart.map(i => ({ pid: i.pid, name: i.name, unit: i.unit, qty: i.qty, price: Number(i.price) || 0 }))
+        const sale = Logic.commitSale(this.S, { items, discount: this.discountAmt, method: this.payModal.method, received: Number(this.payModal.received) || 0 })
+        this.resultSale = sale
+        this.payModal.open = false
+        this.cart = []; this.discount = ''; this.cartOpen = false
+      } catch (e) { this.toast(e.message, 'bad') }
+    },
+    undoResult() {
+      const s = this.resultSale
+      this.askConfirm('ยกเลิกบิล ' + s.no + '?', 'สต็อกจะถูกคืนเข้าคลัง และบิลนี้จะไม่นับเป็นยอดขาย', 'ยกเลิกบิล', () => {
+        try { Logic.voidSale(this.S, s.id, 'ยกเลิกทันทีหลังขาย'); this.resultSale = null; this.toast('ยกเลิกบิล ' + s.no + ' แล้ว') }
+        catch (e) { this.toast(e.message, 'bad') }
+      })
+    },
+
+    // ===== บิลย้อนหลัง =====
+    voidFromHistory() {
+      const s = this.curSale
+      if (!s) return
+      this.askPin('ยกเลิกบิล ' + s.no, () => {
+        try { Logic.voidSale(this.S, s.id, this.voidReason); this.toast('ยกเลิกบิล ' + s.no + ' และคืนสต็อกแล้ว') }
+        catch (e) { this.toast(e.message, 'bad') }
+      })
+    },
+
+    // ===== คลังสินค้า =====
+    openProduct(p) { this.productModal = p.id; this.adj = { counted: this.stockMap[p.id] || 0, reason: 'นับสต็อกไม่ตรง', note: '' } },
+    doAdjust() {
+      const p = this.curProduct
+      if (!p || this.adjDiff === 0) return
+      const counted = Math.floor(Number(this.adj.counted))
+      if (!(counted >= 0)) return this.toast('จำนวนไม่ถูกต้อง', 'bad')
+      this.askPin('ปรับสต็อก ' + p.name, () => {
+        try {
+          const d = Logic.adjust(this.S, p.id, counted, this.adj.reason, this.adj.note)
+          this.toast('ปรับสต็อกแล้ว (' + (d > 0 ? '+' : '') + d + ')')
+          this.adj = { counted, reason: 'นับสต็อกไม่ตรง', note: '' }
+        } catch (e) { this.toast(e.message, 'bad') }
+      })
+    },
+    openForm(p) {
+      if (p) this.formModal = { isNew: false, id: p.id, code: p.code, name: p.name, generic: p.generic, category: p.category, unit: p.unit, price: p.price, cost: p.cost, reorder: p.reorder, note: p.note,
+                                isBundle: !!(p.bundle && p.bundle.length), parts: (p.bundle || []).map(b => ({ ...b })) }
+      else {
+        const max = this.S.products.reduce((m, x) => Math.max(m, parseInt(x.code, 10) || 0), 0)
+        this.formModal = { isNew: true, id: '', code: pad(max + 1), name: '', generic: '', category: CATS[0], unit: 'แผง', price: '', cost: '', reorder: 1, note: '', isBundle: false, parts: [], openQty: '' }
+      }
+    },
+    saveForm() {
+      const f = this.formModal
+      if (!f.name.trim()) return this.toast('ใส่ชื่อสินค้าก่อน', 'bad')
+      if (!f.code.trim()) return this.toast('ใส่รหัสสินค้าก่อน', 'bad')
+      if (this.S.products.some(x => x.code === f.code.trim() && x.id !== f.id)) return this.toast('รหัสนี้ถูกใช้แล้ว', 'bad')
+      if ((Number(f.price) || 0) < 0 || f.price === '') return this.toast('ใส่ราคาขายก่อน', 'bad')
+      const data = { code: f.code.trim(), name: f.name.trim(), generic: f.generic.trim(), category: f.category, unit: f.unit.trim() || 'ชิ้น',
+                     price: Number(f.price) || 0, cost: Number(f.cost) || 0, reorder: Number(f.reorder) || 0, note: f.note.trim() }
+      let parts = []
+      if (f.isBundle) {
+        parts = f.parts.filter(x => x.pid && Math.floor(Number(x.qty)) > 0).map(x => ({ pid: x.pid, qty: Math.floor(Number(x.qty)) }))
+        if (!parts.length) return this.toast('เลือกยาในชุดอย่างน้อย 1 ตัว', 'bad')
+        if (new Set(parts.map(x => x.pid)).size !== parts.length) return this.toast('มียาซ้ำในชุด', 'bad')
+        if (!f.isNew && (this.stockMap[f.id] || 0) > 0 && !this.S.products.find(x => x.id === f.id).bundle)
+          return this.toast('ยานี้ยังมีสต็อก ให้ปรับสต็อกเป็น 0 ก่อนแปลงเป็นยาชุด', 'bad')
+        data.cost = R2(parts.reduce((t, x) => { const c = this.S.products.find(y => y.id === x.pid); return t + (c ? c.cost * x.qty : 0) }, 0))
+      }
+      if (f.isNew) {
+        const id = 'p' + uid()
+        this.S.products.push({ id, active: true, ...data, ...(f.isBundle ? { bundle: parts } : {}) })
+        const oq = Math.floor(Number(f.openQty)) || 0
+        if (!f.isBundle && oq > 0) Logic.openStock(this.S, id, oq, data.cost)
+        this.formModal = null
+        return this.toast(oq > 0 && !f.isBundle ? 'เพิ่มสินค้าแล้ว สต็อก ' + oq : 'เพิ่มสินค้าแล้ว สต็อกเป็น 0 ไปรับของเข้าเพื่อเพิ่มจำนวน')
+      }
+      {
+        const target = this.S.products.find(x => x.id === f.id)
+        Object.assign(target, data)
+        if (f.isBundle) target.bundle = parts; else delete target.bundle
+      }
+      this.formModal = null
+      this.toast('บันทึกข้อมูลสินค้าแล้ว')
+    },
+
+    // ===== รับของเข้า =====
+    addRcvItem(p) {
+      this.rcv.items.push({ pid: p.id, name: p.name, unit: p.unit, qty: 1, unitCost: p.cost, lotNo: '', expiry: '' })
+      this.rcvSearch = ''; this.rcvOpen = false
+    },
+    marginText(it) {
+      const p = this.S.products.find(x => x.id === it.pid)
+      const c = Number(it.unitCost) || 0
+      if (!p || !p.price || !c) return ''
+      return 'ขาย ฿' + this.money(p.price) + ' กำไร ' + Math.round((p.price - c) / p.price * 100) + '%'
+    },
+    saveReceive() {
+      try {
+        const rc = Logic.receive(this.S, this.rcv)
+        this.toast('รับเข้าแล้ว ' + rc.items.length + ' รายการ ฿' + this.money(rc.total))
+        this.rcv = { invoice: '', supplier: '', day: dayKey(new Date()), items: [] }
+      } catch (e) { this.toast(e.message, 'bad') }
+    },
+
+    // ===== ปิดวัน =====
+    loadClosing() {
+      const c = this.S.closings.find(x => x.day === this.repDay)
+      if (c) { this.openFloat = c.openFloat; this.cashCounted = c.counted; this.closeNote = c.note || ''; return }
+      const prev = this.S.closings.filter(x => x.day < this.repDay).sort((a, b) => b.day.localeCompare(a.day))[0]
+      this.openFloat = prev ? prev.counted : ''
+      this.cashCounted = ''; this.closeNote = ''
+    },
+    saveClosing() {
+      if (this.cashCounted === '' || this.cashCounted === null) return this.toast('ใส่ยอดเงินสดที่นับได้ก่อน', 'bad')
+      const rec = { day: this.repDay, ts: new Date().toISOString(), openFloat: Number(this.openFloat) || 0, cashSales: this.rep.cash,
+                    expected: this.cashExpected, counted: Number(this.cashCounted) || 0, diff: this.cashDiff, note: this.closeNote }
+      const i = this.S.closings.findIndex(x => x.day === this.repDay)
+      if (i >= 0) this.S.closings.splice(i, 1, rec); else this.S.closings.push(rec)
+      this.toast('บันทึกปิดวันแล้ว')
+    },
+
+    // ===== ตั้งค่า =====
+    changePin() {
+      if (this.pinForm.old !== this.S.settings.pin) return this.toast('รหัสเดิมไม่ถูกต้อง', 'bad')
+      if ((this.pinForm.next || '').length < 4) return this.toast('รหัสใหม่ต้องมีอย่างน้อย 4 ตัว', 'bad')
+      this.S.settings.pin = this.pinForm.next
+      this.pinForm = { old: '', next: '' }
+      this.toast('เปลี่ยนรหัสผ่านแล้ว')
+    },
+    makeBackup() {
+      this.backupText = JSON.stringify(this.S)
+      try {
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(new Blob([this.backupText], { type: 'application/json' }))
+        a.download = 'backup-' + dayKey(new Date()) + '.json'
+        a.click()
+      } catch (e) { /* บางโปรแกรมแก้ HTML ไม่ยอมให้ดาวน์โหลด ใช้การคัดลอกข้อความแทน */ }
+      this.toast('สร้างข้อมูลสำรองแล้ว ก๊อปข้อความไปเก็บได้')
+    },
+    copyBackup() {
+      if (!this.backupText) this.backupText = JSON.stringify(this.S)
+      try { navigator.clipboard.writeText(this.backupText).then(() => this.toast('คัดลอกแล้ว')).catch(() => this.toast('คัดลอกเองจากช่องข้อความได้เลย')) }
+      catch (e) { this.toast('คัดลอกเองจากช่องข้อความได้เลย') }
+    },
+    restoreBackup() {
+      let d
+      try { d = JSON.parse(this.backupText) } catch (e) { return this.toast('ข้อความสำรองไม่ถูกต้อง', 'bad') }
+      if (!d || !Array.isArray(d.products) || !Array.isArray(d.lots) || !Array.isArray(d.sales) || !d.settings) return this.toast('ข้อมูลสำรองไม่ครบ', 'bad')
+      this.askPin('กู้คืนข้อมูลสำรอง', () => { Object.assign(this.S, d); this.toast('กู้คืนข้อมูลแล้ว') })
+    },
+    resetAll() {
+      this.askPin('ล้างข้อมูลทั้งหมด', () => {
+        this.askConfirm('ล้างข้อมูลทั้งหมด?', 'บิลและประวัติจะหายทั้งหมด ย้อนกลับไม่ได้', 'ล้างและเริ่มใหม่', () => {
+          Object.assign(this.S, makeSeed()); this.cart = []; this.toast('เริ่มใหม่แล้ว')
+        })
+      })
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
