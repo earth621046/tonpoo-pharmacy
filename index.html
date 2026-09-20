@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>POS ร้านยา V4 (Supabase Cloud Connected)</title>
+  <title>POS ร้านยา V5</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -62,16 +62,44 @@
 <div id="app" style="height:100vh; height:100dvh;" class="flex flex-col max-w-7xl mx-auto relative">
 
   <!-- หน้าจอโหลดข้อมูลจาก Supabase -->
-  <div v-if="isLoading" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center">
-    <div class="text-2xl font-bold text-teal-700 mb-4">กำลังซิงค์คลาวด์เซฟ...</div>
+  <div v-if="isLoading" class="fixed inset-0 bg-white flex flex-col items-center justify-center" style="z-index:100">
+    <div class="text-2xl font-bold mb-4" style="color:var(--pine)">กำลังโหลดข้อมูล...</div>
     <div class="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+
+  <!-- หน้าล็อกอิน -->
+  <div v-if="!authed && !isLoading" class="fixed inset-0 flex items-center justify-center p-5" style="z-index:100; background:#0f3f3a">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+      <div class="text-center mb-5">
+        <div class="text-2xl font-bold">{{ S.settings.shopName }}</div>
+        <div class="text-sm text-slate-500">เข้าสู่ระบบเพื่อใช้งาน</div>
+      </div>
+      <form @submit.prevent="doLogin($event)">
+        <label class="lbl">ชื่อผู้ใช้</label>
+        <input v-model="loginForm.user" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" class="inp mb-3" placeholder="เช่น earth">
+        <label class="lbl">รหัสผ่าน</label>
+        <input v-model="loginForm.pass" name="password" type="password" autocomplete="current-password" class="inp mb-3" placeholder="อย่างน้อย 6 ตัว">
+        <div v-if="loginForm.error" class="text-red-600 text-sm mb-3 text-center">{{ loginForm.error }}</div>
+        <button type="submit" class="btn btn-pri w-full text-lg" :disabled="loginForm.busy">{{ loginForm.busy ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}</button>
+      </form>
+      <div class="text-xs text-slate-400 text-center mt-4">เครื่องนี้จะจำการเข้าสู่ระบบไว้ ไม่ต้องพิมพ์ทุกครั้ง</div>
+    </div>
   </div>
 
   <!-- ============ Header ============ -->
   <header class="hdr px-4 pt-3 pb-2">
-    <div class="flex items-center justify-between mb-2">
-      <div class="font-bold text-lg">{{ S.settings.shopName }}</div>
-      <div class="text-sm" style="color:#b9dcd7">{{ todayLabel }}</div>
+    <div class="flex items-center justify-between mb-2 gap-2">
+      <div>
+        <div class="font-bold text-lg">{{ S.settings.shopName }}</div>
+        <div class="text-xs" style="color:#b9dcd7">{{ todayLabel }}</div>
+      </div>
+      <div class="flex items-center gap-3 text-sm" style="color:#b9dcd7">
+        <button class="flex items-center gap-1" @click="onSyncTap">
+          <span :style="'display:inline-block;width:10px;height:10px;border-radius:50%;background:' + syncColor"></span>{{ syncLabel }}
+        </button>
+        <span v-if="actor">{{ actor }}</span>
+        <button class="underline" @click="askLogout">ออก</button>
+      </div>
     </div>
     <nav class="flex gap-1 overflow-x-auto pb-1">
       <button v-for="t in tabs" :key="t.id" @click="goTab(t.id)" class="tab" :class="tab === t.id ? 'tab-on' : ''">
@@ -201,6 +229,7 @@
         <div class="mt-1">
           <span class="tag" :style="s.method === 'cash' ? 'background:#e2e8f0' : 'background:#ccfbf1;color:#0f766e'">{{ s.method === 'cash' ? 'เงินสด' : 'โอน' }}</span>
           <span v-if="s.status === 'void'" class="tag ml-1" style="background:#fee2e2;color:#b91c1c">ยกเลิกแล้ว</span>
+          <span v-if="s.by" class="text-xs text-slate-500 ml-1">{{ s.by }}</span>
         </div>
       </button>
     </section>
@@ -286,7 +315,7 @@
       <div v-if="recentReceipts.length === 0" class="text-slate-400 text-sm">ยังไม่มีบิลรับเข้า</div>
       <div v-for="r in recentReceipts" :key="r.id" class="card p-3 mb-2">
         <div class="flex justify-between"><div class="font-semibold">{{ r.invoice || 'ไม่ระบุเลขที่บิล' }}</div><div class="font-bold num">฿{{ money(r.total) }}</div></div>
-        <div class="text-xs text-slate-500">{{ fmtDay(r.day) }} {{ r.supplier }} รวม {{ r.items.length }} รายการ</div>
+        <div class="text-xs text-slate-500">{{ fmtDay(r.day) }} {{ r.supplier }} รวม {{ r.items.length }} รายการ<span v-if="r.by"> โดย {{ r.by }}</span></div>
       </div>
     </section>
 
@@ -340,7 +369,18 @@
       </div>
 
       <div class="card p-4 mb-3">
-        <div class="font-bold mb-1">เปลี่ยนรหัสผ่าน</div>
+        <div class="font-bold mb-1">บัญชีผู้ใช้</div>
+        <div class="text-sm text-slate-600 mb-3">เข้าสู่ระบบเป็น <b>{{ actor }}</b> · สถานะ: {{ syncLabel }}</div>
+        <label class="lbl">เปลี่ยนรหัสผ่านเข้าระบบ (อย่างน้อย 6 ตัว)</label>
+        <div class="flex gap-2 mb-3">
+          <input v-model="pwForm.next" type="password" autocomplete="new-password" class="inp" placeholder="รหัสผ่านใหม่">
+          <button class="btn btn-ghost whitespace-nowrap" @click="changeLoginPassword">เปลี่ยน</button>
+        </div>
+        <button class="btn btn-badline w-full" @click="askLogout">ออกจากระบบ</button>
+      </div>
+
+      <div class="card p-4 mb-3">
+        <div class="font-bold mb-1">เปลี่ยนรหัสยืนยัน (PIN)</div>
         <div class="text-xs text-slate-500 mb-3">ใช้ยืนยันตอนปรับสต็อก และตอนยกเลิกบิลย้อนหลัง</div>
         <div class="grid grid-cols-2 gap-3">
           <div><label class="lbl">รหัสเดิม</label><input v-model="pinForm.old" type="password" inputmode="numeric" class="inp"></div>
@@ -351,13 +391,14 @@
 
       <div class="card p-4 mb-3">
         <div class="font-bold mb-1">สำรองและกู้คืนข้อมูล</div>
-        <div class="text-xs text-slate-500 mb-3">ตอนนี้ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้ ควรสำรองไว้เป็นระยะ</div>
+        <div class="text-xs text-slate-500 mb-3">ข้อมูลหลักเก็บบนคลาวด์ (Supabase) ควรสำรองไว้เป็นระยะ เพราะแพ็กเกจฟรีไม่มีระบบสำรองอัตโนมัติ</div>
         <div class="grid grid-cols-2 gap-2 mb-3">
           <button class="btn btn-ghost" @click="makeBackup">สร้างข้อมูลสำรอง</button>
           <button class="btn btn-ghost" @click="copyBackup">คัดลอกข้อความ</button>
         </div>
         <textarea v-model="backupText" rows="4" class="inp" placeholder="ข้อความสำรองจะแสดงที่นี่ หรือวางข้อความสำรองเพื่อกู้คืน"></textarea>
         <button class="btn btn-badline w-full mt-3" @click="restoreBackup">กู้คืนจากข้อความนี้ (ทับข้อมูลปัจจุบัน)</button>
+        <button v-if="stashAt" class="btn btn-ghost w-full mt-2" @click="showStash">ดูข้อมูลที่ค้างจากเครื่องนี้ (ไม่ได้ซิงค์) · {{ stashAt }}</button>
       </div>
 
       <div class="card p-4">
@@ -438,11 +479,11 @@
   <div v-if="curSale" class="modal-bg" @click.self="saleDetailId = null">
     <div class="modal p-5">
       <div class="flex justify-between items-start mb-2">
-        <div><div class="font-bold text-lg">{{ curSale.no }}</div><div class="text-sm text-slate-500">{{ fmtDay(curSale.day) }} {{ fmtTime(curSale.ts) }}</div></div>
+        <div><div class="font-bold text-lg">{{ curSale.no }}</div><div class="text-sm text-slate-500">{{ fmtDay(curSale.day) }} {{ fmtTime(curSale.ts) }}<span v-if="curSale.by"> โดย {{ curSale.by }}</span></div></div>
         <button class="text-slate-400 text-2xl leading-none" @click="saleDetailId = null">&times;</button>
       </div>
       <div v-if="curSale.status === 'void'" class="p-2 rounded-lg mb-2 text-sm" style="background:#fee2e2;color:#b91c1c">
-        ยกเลิกแล้ว เหตุผล: {{ curSale.voidReason }}
+        ยกเลิกแล้ว เหตุผล: {{ curSale.voidReason }}<span v-if="curSale.voidBy"> (โดย {{ curSale.voidBy }})</span>
       </div>
       <div v-for="(it, i) in curSale.items" :key="i" class="flex justify-between py-2 border-b text-sm" style="border-color:var(--line)">
         <div>{{ it.name }} <span class="text-slate-500">× {{ it.qty }} @ ฿{{ money(it.price) }}</span></div>
@@ -519,7 +560,7 @@
           <div class="font-bold mb-1">ประวัติเข้า-ออกล่าสุด</div>
           <div v-if="productMoves.length === 0" class="text-sm text-slate-400">ยังไม่มีประวัติ</div>
           <div v-for="m in productMoves" :key="m.id" class="flex justify-between text-sm py-1 border-b" style="border-color:#eef3f2">
-            <span><span class="text-slate-500">{{ fmtDay(dayKey(new Date(m.ts))) }} {{ fmtTime(m.ts) }}</span> {{ MOVE_LABEL[m.type] }} <span class="text-slate-500">{{ m.ref || m.note }}</span></span>
+            <span><span class="text-slate-500">{{ fmtDay(dayKey(new Date(m.ts))) }} {{ fmtTime(m.ts) }}</span> {{ MOVE_LABEL[m.type] }} <span class="text-slate-500">{{ m.ref || m.note }}<span v-if="m.by"> ({{ m.by }})</span></span></span>
             <span class="num font-semibold" :class="m.qty > 0 ? 'text-green-700' : 'text-red-600'">{{ m.qty > 0 ? '+' : '' }}{{ m.qty }}</span>
           </div>
         </div>
@@ -592,6 +633,17 @@
         <button class="btn btn-ghost" @click="confirmBox.open = false">ไม่ใช่</button>
         <button class="btn btn-bad" @click="runConfirm">{{ confirmBox.okText }}</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ข้อมูลไม่ตรงกับคลาวด์ -->
+  <div v-if="syncConflict" class="modal-bg" style="z-index:65">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-1">ข้อมูลไม่ตรงกับคลาวด์</div>
+      <div class="text-slate-600 text-sm mb-4">มีการบันทึกจากเครื่องหรือบัญชีอื่นที่ใหม่กว่าข้อมูลในหน้านี้ ระบบจึงหยุดบันทึกไว้ก่อนเพื่อไม่ให้ข้อมูลทับกัน เลือกวิธีจัดการ</div>
+      <button class="btn btn-pri w-full mb-2" @click="conflictUseCloud">โหลดข้อมูลล่าสุดจากคลาวด์ (แนะนำ)</button>
+      <button class="btn btn-ghost w-full mb-2" @click="conflictCopyLocal">คัดลอกข้อมูลของเครื่องนี้เก็บไว้ก่อน</button>
+      <button class="btn btn-badline w-full" @click="conflictForce">ใช้ข้อมูลเครื่องนี้ทับคลาวด์ (ต้องใส่รหัสผ่าน)</button>
     </div>
   </div>
 
@@ -695,27 +747,61 @@ const supabaseUrl = 'https://snzhaqfffsueowqznqmm.supabase.co'
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuemhhcWZmZnN1ZW93cXpucW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3ODQ0MTEsImV4cCI6MjEwNTM2MDQxMX0.fnpvOwJntI5x1Ss5sA8MG5ZR8wLq1TBu7b8t-qbcBDI'
 const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
 
-const STORAGE_KEY = 'knockdown_pos_v5'
+// ชื่อผู้ใช้ที่พิมพ์สั้นๆ (เช่น earth) จะถูกต่อท้ายด้วยโดเมนนี้ให้กลายเป็นอีเมลตอนล็อกอิน
+// ต้องตรงกับโดเมนของอีเมลที่สร้างไว้ในหน้า Authentication > Users ของ Supabase
+// (ถ้าพิมพ์อีเมลเต็มที่มี @ ระบบจะใช้ตามที่พิมพ์)
+const LOGIN_DOMAIN = 'knockdown-shop.com'
+const toEmail = u => { u = String(u || '').trim().toLowerCase(); return u.indexOf('@') >= 0 ? u : u + '@' + LOGIN_DOMAIN }
+const userNameOf = email => String(email || '').split('@')[0]
+let ACTOR = ''   // ชื่อผู้ใช้ที่ล็อกอินอยู่ ใช้บันทึกว่าใครเป็นคนทำรายการ
+
+const LOCAL_KEY = 'knockdown_pos_v6'
+const OLD_LOCAL_KEY = 'knockdown_pos_v5'
+const STASH_KEY = 'knockdown_pos_unsynced'
 const Storage = {
   ok: true,
-  async loadFromCloud() {
+  loadLocal() {
     try {
-      const { data, error } = await _supabase.from('app_state').select('data').eq('id', 1).single()
-      if (data && data.data) return data.data
-    } catch (e) { console.error(e) }
+      const t = localStorage.getItem(LOCAL_KEY)
+      if (t) { const o = JSON.parse(t); if (o && o.state && o.state.products) return o }
+      const old = localStorage.getItem(OLD_LOCAL_KEY)
+      if (old) { const st = JSON.parse(old); if (st && st.products) return { state: st, baseRev: 0, dirty: false } }
+    } catch (e) { /* ignore */ }
     return null
   },
-  async saveToCloud(S) {
-    try { await _supabase.from('app_state').upsert({ id: 1, data: S }) }
-    catch (e) { console.error(e) }
-  },
-  loadLocal() {
-    try { const t = localStorage.getItem(STORAGE_KEY); return t ? JSON.parse(t) : null }
-    catch (e) { return null }
-  },
-  saveLocal(S) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); this.ok = true }
+  saveLocal(state, baseRev, dirty) {
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ state, baseRev, dirty })); this.ok = true }
     catch (e) { this.ok = false }
+  },
+  clearLocal() { try { localStorage.removeItem(LOCAL_KEY); localStorage.removeItem(OLD_LOCAL_KEY) } catch (e) { /* ignore */ } },
+  stash(state) { try { localStorage.setItem(STASH_KEY, JSON.stringify({ at: new Date().toISOString(), state })) } catch (e) { /* ignore */ } },
+  loadStash() { try { const t = localStorage.getItem(STASH_KEY); return t ? JSON.parse(t) : null } catch (e) { return null } },
+
+  // อ่านข้อมูลทั้งก้อนจากคลาวด์ พร้อมเลขเวอร์ชัน (rev)
+  async loadFromCloud() {
+    try {
+      const { data, error } = await _supabase.from('app_state').select('data, rev, updated_by, updated_at').eq('id', 1).maybeSingle()
+      if (error) return { error: error.message || 'โหลดข้อมูลไม่สำเร็จ' }
+      if (!data) return { data: null, rev: 0 }
+      return { data: data.data, rev: data.rev || 0, by: data.updated_by, at: data.updated_at }
+    } catch (e) { return { error: (e && e.message) || 'เชื่อมต่อไม่ได้' } }
+  },
+  // อ่านเฉพาะเลขเวอร์ชัน ไว้เช็กว่าเครื่องอื่นบันทึกไปหรือยัง
+  async loadRev() {
+    try {
+      const { data, error } = await _supabase.from('app_state').select('rev, updated_by').eq('id', 1).maybeSingle()
+      if (error || !data) return null
+      return { rev: data.rev || 0, by: data.updated_by }
+    } catch (e) { return null }
+  },
+  // บันทึกแบบมีเงื่อนไข: สำเร็จเฉพาะเมื่อเลขเวอร์ชันบนคลาวด์ยังตรงกับที่เครื่องนี้โหลดมา
+  async saveToCloud(state, expectedRev, who) {
+    try {
+      const { data, error } = await _supabase.rpc('save_state', { expected_rev: expectedRev, new_data: state, who })
+      if (error) return { error: error.message || 'บันทึกไม่สำเร็จ' }
+      if (data === -1) return { conflict: true }
+      return { ok: true, rev: data }
+    } catch (e) { return { error: (e && e.message) || 'เชื่อมต่อไม่ได้' } }
   }
 }
 
@@ -744,7 +830,7 @@ const Logic = {
       lot.qtyLeft -= q; need -= q
       allocs.push({ lotId: lot.id, qty: q, cost: lot.cost, pid })
       costTotal += q * lot.cost
-      S.movements.push({ id: uid(), ts: ctx.ts, pid, type: ctx.type, qty: -q, lotId: lot.id, ref: ctx.ref || '', note: ctx.note || '' })
+      S.movements.push({ id: uid(), ts: ctx.ts, pid, type: ctx.type, qty: -q, lotId: lot.id, ref: ctx.ref || '', note: ctx.note || '', by: ACTOR })
     }
     return { allocs, costTotal: R2(costTotal) }
   },
@@ -787,7 +873,7 @@ const Logic = {
     })
     const recv = method === 'cash' ? R2(received) : total
     const sale = { id: uid(), no, ts, day: dayKey(new Date(ts)), items: lines, subtotal, discount: disc, total,
-                   method, received: recv, change: R2(recv - total), status: 'ok' }
+                   method, received: recv, change: R2(recv - total), status: 'ok', by: ACTOR }
     S.sales.push(sale)
     return sale
   },
@@ -800,10 +886,10 @@ const Logic = {
       for (const a of line.allocs) {
         const lot = S.lots.find(l => l.id === a.lotId)
         if (lot) lot.qtyLeft += a.qty
-        S.movements.push({ id: uid(), ts, pid: a.pid || line.pid, type: 'void', qty: a.qty, lotId: a.lotId, ref: sale.no, note: reason || '' })
+        S.movements.push({ id: uid(), ts, pid: a.pid || line.pid, type: 'void', qty: a.qty, lotId: a.lotId, ref: sale.no, note: reason || '', by: ACTOR })
       }
     }
-    sale.status = 'void'; sale.voidTs = ts; sale.voidReason = reason || ''
+    sale.status = 'void'; sale.voidTs = ts; sale.voidReason = reason || ''; sale.voidBy = ACTOR
     return sale
   },
   receive(S, { invoice, supplier, day, items }) {
@@ -823,12 +909,12 @@ const Logic = {
       const unitCost = R4(it.unitCost)
       const lot = { id: uid(), pid: p.id, lotNo: (it.lotNo || '').trim(), expiry: it.expiry || '', qtyIn: qty, qtyLeft: qty, cost: unitCost, receivedAt: ts, source: 'receive' }
       S.lots.push(lot)
-      S.movements.push({ id: uid(), ts, pid: p.id, type: 'receive', qty, lotId: lot.id, ref: invoice || '', note: supplier || '' })
+      S.movements.push({ id: uid(), ts, pid: p.id, type: 'receive', qty, lotId: lot.id, ref: invoice || '', note: supplier || '', by: ACTOR })
       p.cost = unitCost
       rows.push({ pid: p.id, name: p.name, unit: p.unit, qty, unitCost, lotNo: lot.lotNo, expiry: lot.expiry })
     }
     const rc = { id: uid(), ts, day: day || dayKey(new Date()), invoice: invoice || '', supplier: supplier || '',
-                 items: rows, total: R2(rows.reduce((s, r) => s + r.qty * r.unitCost, 0)) }
+                 items: rows, total: R2(rows.reduce((s, r) => s + r.qty * r.unitCost, 0)), by: ACTOR }
     S.receipts.push(rc)
     return rc
   },
@@ -836,7 +922,7 @@ const Logic = {
     const ts = new Date().toISOString()
     const lot = { id: uid(), pid, lotNo: '', expiry: '', qtyIn: qty, qtyLeft: qty, cost: R4(cost), receivedAt: ts, source: 'opening' }
     S.lots.push(lot)
-    S.movements.push({ id: uid(), ts, pid, type: 'opening', qty, lotId: lot.id, ref: '', note: 'สต็อกตั้งต้นตอนเพิ่มสินค้า' })
+    S.movements.push({ id: uid(), ts, pid, type: 'opening', qty, lotId: lot.id, ref: '', note: 'สต็อกตั้งต้นตอนเพิ่มสินค้า', by: ACTOR })
   },
   adjust(S, pid, counted, reason, note) {
     const p = S.products.find(x => x.id === pid)
@@ -851,7 +937,7 @@ const Logic = {
     if (diff > 0) {
       const lot = { id: uid(), pid, lotNo: '', expiry: '', qtyIn: diff, qtyLeft: diff, cost: p.cost, receivedAt: ts, source: 'adjust' }
       S.lots.push(lot)
-      S.movements.push({ id: uid(), ts, pid, type: 'adjust', qty: diff, lotId: lot.id, ref: '', note: label })
+      S.movements.push({ id: uid(), ts, pid, type: 'adjust', qty: diff, lotId: lot.id, ref: '', note: label, by: ACTOR })
     } else {
       this.take(S, pid, -diff, { ts, type: 'adjust', note: label })
     }
@@ -890,8 +976,15 @@ const { createApp } = Vue
 createApp({
   data() {
     const today = dayKey(new Date())
+    let lastUser = ''
+    try { lastUser = localStorage.getItem('knockdown_last_user') || '' } catch (e) { /* ignore */ }
+    const stash = Storage.loadStash()
     return {
-      isLoading: true, saveTimer: null,
+      isLoading: true, saveTimer: null, retryTimer: null, remoteTimer: null,
+      authed: false, actor: '', loginForm: { user: lastUser, pass: '', busy: false, error: '' },
+      syncState: 'saved', cloudRev: 0, dirty: false, saving: false, pendingSave: false, suppressWatch: false,
+      changeSeq: 0, syncConflict: false, errShown: false, pwForm: { next: '' },
+      stashAt: stash ? new Date(stash.at).toLocaleString('th-TH') : '',
       S: makeSeed(), storageOk: true, CATS, MOVE_LABEL,
       tabs: [{ id: 'pos', name: 'ขาย' }, { id: 'history', name: 'บิล' }, { id: 'stock', name: 'คลังสินค้า' },
              { id: 'receive', name: 'รับของเข้า' }, { id: 'report', name: 'ปิดวัน' }, { id: 'settings', name: 'ตั้งค่า' }],
@@ -912,6 +1005,8 @@ createApp({
 
   computed: {
     todayLabel() { return new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) },
+    syncLabel() { return { saved: 'บันทึกแล้ว', saving: 'กำลังบันทึก...', dirty: 'รอบันทึก...', error: 'ยังไม่ได้บันทึก (ลองใหม่)', conflict: 'ข้อมูลไม่ตรงกับคลาวด์' }[this.syncState] || '' },
+    syncColor() { return { saved: '#4ade80', saving: '#fbbf24', dirty: '#fbbf24', error: '#f87171', conflict: '#f87171' }[this.syncState] || '#4ade80' },
     activeProducts() { return this.S.products.filter(p => p.active !== false) },
     stockMap() {
       const m = {}
@@ -998,11 +1093,15 @@ createApp({
     S: {
       deep: true,
       handler() {
-        if (this.isLoading) return
-        Storage.saveLocal(this.S)
+        if (this.isLoading || this.suppressWatch || !this.authed) return
+        this.changeSeq++
+        this.dirty = true
+        Storage.saveLocal(this.S, this.cloudRev, true)   // เก็บสำเนาในเครื่องทันที พร้อมธงว่ายังไม่ขึ้นคลาวด์
         this.storageOk = Storage.ok
+        if (this.syncConflict) return
+        this.syncState = 'dirty'
         clearTimeout(this.saveTimer)
-        this.saveTimer = setTimeout(() => { Storage.saveToCloud(this.S) }, 1500)
+        this.saveTimer = setTimeout(() => this.saveNow(), 600)
       }
     },
     repDay() { this.loadClosing() },
@@ -1010,22 +1109,172 @@ createApp({
   },
 
   async mounted() {
+    document.addEventListener('visibilitychange', () => {
+      if (!this.authed) return
+      if (document.hidden) { if (this.dirty) this.saveNow() } else this.checkRemote()
+    })
+    window.addEventListener('online', () => { if (this.authed) { if (this.dirty) this.saveNow(); else this.checkRemote() } })
+    window.addEventListener('pagehide', () => { if (this.authed && this.dirty) this.saveNow() })
+    this.remoteTimer = setInterval(() => { if (this.authed && !document.hidden) this.checkRemote() }, 45000)
+    _supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' && this.authed) { this.authed = false; this.loginForm.error = 'หมดเวลาการเข้าสู่ระบบ กรุณาเข้าใหม่' }
+    })
     try {
-      const cloud = await Storage.loadFromCloud()
-      if (cloud && cloud.products) {
-        this.S = cloud
-      } else {
-        const local = Storage.loadLocal()
-        if (local && local.products) this.S = local
-      }
+      const { data } = await _supabase.auth.getSession()
+      if (data && data.session) await this.startApp(data.session.user)
     } catch (e) { console.error(e) }
     this.isLoading = false
-    this.storageOk = Storage.ok
-    this.loadClosing()
   },
 
   methods: {
     dayKey,
+
+    // ===== ล็อกอิน / ซิงค์คลาวด์ =====
+    setState(next) {
+      this.suppressWatch = true
+      this.S = next
+      this.$nextTick(() => { this.suppressWatch = false })
+    },
+    refreshStash() { const st = Storage.loadStash(); this.stashAt = st ? new Date(st.at).toLocaleString('th-TH') : '' },
+    async startApp(user) {
+      this.isLoading = true
+      this.actor = userNameOf(user.email); ACTOR = this.actor
+      try { localStorage.setItem('knockdown_last_user', this.actor) } catch (e) { /* ignore */ }
+      const local = Storage.loadLocal()
+      const cloud = await Storage.loadFromCloud()
+      const hasCloud = !!(cloud.data && cloud.data.products)
+      let next, dirty = false, rev = 0
+      this.syncState = 'saved'; this.errShown = false
+      if (cloud.error) {
+        // ต่อคลาวด์ไม่ได้ (ออฟไลน์ หรือฐานข้อมูลยังไม่ได้ตั้งค่า) ใช้ข้อมูลในเครื่องไปก่อน
+        next = local ? local.state : makeSeed(); rev = local ? (local.baseRev || 0) : 0; dirty = local ? !!local.dirty : true
+        this.syncState = 'error'
+        this.toast('เชื่อมต่อคลาวด์ไม่ได้: ' + cloud.error, 'bad')
+      } else {
+        rev = cloud.rev
+        if (local && local.dirty && local.baseRev === cloud.rev) { next = local.state; dirty = true }
+        else if (local && local.dirty) {
+          Storage.stash(local.state); this.refreshStash()
+          next = hasCloud ? cloud.data : local.state; dirty = !hasCloud
+          this.toast('พบข้อมูลค้างในเครื่องที่ไม่ตรงกับคลาวด์ เก็บสำรองไว้ที่ตั้งค่าแล้ว', 'bad')
+        }
+        else if (hasCloud) { next = cloud.data }
+        else { next = local ? local.state : makeSeed(); dirty = true }   // คลาวด์ยังว่าง
+      }
+      this.setState(next); this.cloudRev = rev; this.dirty = dirty
+      this.authed = true; this.isLoading = false
+      Storage.saveLocal(this.S, this.cloudRev, this.dirty); this.storageOk = Storage.ok
+      this.loadClosing()
+      if (this.dirty) this.saveNow()
+    },
+    async doLogin(ev) {
+      const f = ev && ev.target && ev.target.elements
+      const user = String((f && f.username && f.username.value) || this.loginForm.user || '').trim()
+      const pass = String((f && f.password && f.password.value) || this.loginForm.pass || '')
+      if (!user || !pass) { this.loginForm.error = 'กรอกชื่อผู้ใช้และรหัสผ่านก่อน'; return }
+      this.loginForm.busy = true; this.loginForm.error = ''
+      try {
+        const { data, error } = await _supabase.auth.signInWithPassword({ email: toEmail(user), password: pass })
+        if (error) {
+          const m = String(error.message || '').toLowerCase()
+          this.loginForm.error = m.indexOf('invalid login') >= 0 ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+            : (error.status === 429 || m.indexOf('rate') >= 0) ? 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่'
+            : 'เข้าสู่ระบบไม่สำเร็จ: ' + error.message
+        } else {
+          this.loginForm.pass = ''
+          await this.startApp(data.user)
+        }
+      } catch (e) { this.loginForm.error = 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่' }
+      this.loginForm.busy = false
+    },
+    askLogout() {
+      this.askConfirm('ออกจากระบบ?', this.dirty ? 'ยังมีข้อมูลที่ไม่ได้บันทึกขึ้นคลาวด์ ระบบจะลองบันทึกก่อนออก' : 'ครั้งหน้าต้องพิมพ์ชื่อผู้ใช้และรหัสผ่านใหม่', 'ออกจากระบบ', () => this.doLogout())
+    },
+    async doLogout() {
+      if (this.dirty) {
+        await this.saveNow()
+        if (this.dirty) return this.toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ ยังไม่ออกจากระบบ', 'bad')
+      }
+      Storage.clearLocal()
+      try { await _supabase.auth.signOut() } catch (e) { /* ignore */ }
+      this.authed = false; this.actor = ''; ACTOR = ''; this.cart = []; this.syncConflict = false; this.tab = 'pos'
+      this.setState(makeSeed())
+    },
+    async changeLoginPassword() {
+      const pw = this.pwForm.next || ''
+      if (pw.length < 6) return this.toast('รหัสผ่านเข้าระบบต้องมีอย่างน้อย 6 ตัว', 'bad')
+      try {
+        const { error } = await _supabase.auth.updateUser({ password: pw })
+        if (error) return this.toast('เปลี่ยนรหัสไม่สำเร็จ: ' + error.message, 'bad')
+        this.pwForm.next = ''; this.toast('เปลี่ยนรหัสผ่านเข้าระบบแล้ว')
+      } catch (e) { this.toast('เชื่อมต่อไม่ได้', 'bad') }
+    },
+    onSyncTap() { if (this.syncState === 'error' || this.syncState === 'dirty') this.saveNow() },
+    async saveNow() {
+      clearTimeout(this.saveTimer)
+      if (!this.authed || this.syncConflict) return
+      if (this.saving) { this.pendingSave = true; return }
+      if (!this.dirty) { this.syncState = 'saved'; return }
+      this.saving = true; this.syncState = 'saving'
+      const seq = this.changeSeq
+      const snapshot = JSON.parse(JSON.stringify(this.S))
+      const res = await Storage.saveToCloud(snapshot, this.cloudRev, this.actor)
+      this.saving = false
+      if (res.ok) {
+        this.cloudRev = res.rev; this.errShown = false
+        if (this.changeSeq === seq) { this.dirty = false; this.syncState = 'saved' } else this.syncState = 'dirty'
+        Storage.saveLocal(this.S, this.cloudRev, this.dirty)
+        if (this.dirty || this.pendingSave) { this.pendingSave = false; this.saveTimer = setTimeout(() => this.saveNow(), 300) }
+      } else if (res.conflict) {
+        this.syncConflict = true; this.syncState = 'conflict'
+      } else {
+        this.syncState = 'error'
+        clearTimeout(this.retryTimer)
+        this.retryTimer = setTimeout(() => this.saveNow(), 15000)
+        if (!this.errShown) { this.errShown = true; this.toast('ยังบันทึกขึ้นคลาวด์ไม่ได้ ระบบจะลองใหม่เอง (ข้อมูลยังอยู่ในเครื่อง)', 'bad') }
+      }
+    },
+    async pullCloud(msg) {
+      const cloud = await Storage.loadFromCloud()
+      if (cloud.error || !cloud.data || !cloud.data.products) return false
+      this.setState(cloud.data); this.cloudRev = cloud.rev; this.dirty = false; this.syncState = 'saved'
+      Storage.saveLocal(this.S, this.cloudRev, false)
+      this.loadClosing()
+      if (msg) this.toast(msg)
+      return true
+    },
+    async checkRemote() {
+      if (!this.authed || this.saving || this.syncConflict) return
+      const r = await Storage.loadRev()
+      if (!r || r.rev <= this.cloudRev) return
+      if (this.dirty) { this.syncConflict = true; this.syncState = 'conflict'; return }
+      await this.pullCloud('อัปเดตข้อมูลล่าสุดจาก ' + (r.by || 'เครื่องอื่น') + ' แล้ว')
+    },
+    async conflictUseCloud() {
+      Storage.stash(this.S); this.refreshStash()
+      clearTimeout(this.saveTimer)
+      const ok = await this.pullCloud('โหลดข้อมูลล่าสุดแล้ว (ข้อมูลเดิมของเครื่องนี้เก็บสำรองไว้ที่ตั้งค่า)')
+      if (ok) this.syncConflict = false
+      else this.toast('โหลดจากคลาวด์ไม่สำเร็จ ลองใหม่อีกครั้ง', 'bad')
+    },
+    conflictCopyLocal() {
+      this.backupText = JSON.stringify(this.S)
+      try { navigator.clipboard.writeText(this.backupText).then(() => this.toast('คัดลอกแล้ว ไปวางเก็บไว้ในโน้ตได้')).catch(() => this.toast('ข้อความอยู่ที่ตั้งค่า > สำรองข้อมูล คัดลอกเองได้')) }
+      catch (e) { this.toast('ข้อความอยู่ที่ตั้งค่า > สำรองข้อมูล คัดลอกเองได้') }
+    },
+    conflictForce() {
+      this.askPin('ใช้ข้อมูลเครื่องนี้ทับคลาวด์', async () => {
+        const r = await Storage.loadRev()
+        if (!r) return this.toast('เชื่อมต่อคลาวด์ไม่ได้', 'bad')
+        this.cloudRev = r.rev; this.syncConflict = false; this.dirty = true; this.saveNow()
+      })
+    },
+    showStash() {
+      const st = Storage.loadStash()
+      if (!st) return this.toast('ไม่มีข้อมูลค้าง', 'bad')
+      this.backupText = JSON.stringify(st.state)
+      this.toast('แสดงข้อมูลที่ค้างในช่องข้อความแล้ว')
+    },
     money(n) { return (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) },
     fmtTime(iso) { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) },
     fmtDay(d) { return new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) },
@@ -1101,6 +1350,7 @@ createApp({
         const items = this.cart.map(i => ({ pid: i.pid, name: i.name, unit: i.unit, qty: i.qty, price: Number(i.price) || 0 }))
         const sale = Logic.commitSale(this.S, { items, discount: this.discountAmt, method: this.payModal.method, received: Number(this.payModal.received) || 0 })
         this.resultSale = sale
+        this.$nextTick(() => this.saveNow())
         this.payModal.open = false
         this.cart = []; this.discount = ''; this.cartOpen = false
       } catch (e) { this.toast(e.message, 'bad') }
@@ -1210,7 +1460,7 @@ createApp({
     saveClosing() {
       if (this.cashCounted === '' || this.cashCounted === null) return this.toast('ใส่ยอดเงินสดที่นับได้ก่อน', 'bad')
       const rec = { day: this.repDay, ts: new Date().toISOString(), openFloat: Number(this.openFloat) || 0, cashSales: this.rep.cash,
-                    expected: this.cashExpected, counted: Number(this.cashCounted) || 0, diff: this.cashDiff, note: this.closeNote }
+                    expected: this.cashExpected, counted: Number(this.cashCounted) || 0, diff: this.cashDiff, note: this.closeNote, by: this.actor }
       const i = this.S.closings.findIndex(x => x.day === this.repDay)
       if (i >= 0) this.S.closings.splice(i, 1, rec); else this.S.closings.push(rec)
       this.toast('บันทึกปิดวันแล้ว')
