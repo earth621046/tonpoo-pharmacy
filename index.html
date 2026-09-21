@@ -105,6 +105,7 @@
       <button v-for="t in tabs" :key="t.id" @click="goTab(t.id)" class="tab" :class="tab === t.id ? 'tab-on' : ''">
         {{ t.name }}
         <span v-if="t.id === 'stock' && alertCount > 0" class="badge">{{ alertCount }}</span>
+        <span v-if="t.id === 'members' && dueCount > 0" class="badge">{{ dueCount }}</span>
       </button>
     </nav>
   </header>
@@ -160,6 +161,17 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-3">
+          <div class="mb-3">
+            <button v-if="!cartMember" class="btn btn-ghost w-full !min-h-0 !py-2 text-sm" @click="openPicker">+ เลือกสมาชิก (ถ้ามี)</button>
+            <div v-else class="p-3 rounded-xl" style="background:#eff6ff;border:1px solid #bfdbfe">
+              <div class="flex justify-between items-center gap-2">
+                <div class="font-semibold">สมาชิก: {{ memberLabel(cartMember) }}</div>
+                <button class="text-sm underline whitespace-nowrap" @click="clearMember">เอาออก</button>
+              </div>
+              <div v-if="cartMember.allergies.length" class="text-sm mt-1" style="color:#b91c1c">แพ้ยา: {{ allergyText(cartMember) }}</div>
+              <div v-if="cartAllergyHits.length" class="mt-2 p-2 rounded-lg text-sm font-semibold" style="background:#fee2e2;color:#b91c1c">⚠ ในตะกร้ามียาที่ตรงกับประวัติแพ้ยา: {{ cartHitText }}</div>
+            </div>
+          </div>
           <div v-if="cart.length === 0" class="text-center text-slate-400 mt-12">ยังไม่มีสินค้า แตะยาเพื่อเพิ่มลงตะกร้า</div>
           <div v-for="(item, i) in cart" :key="item.key" class="p-3 mb-2 rounded-xl border" style="border-color:var(--line);background:#f8fbfa">
             <div class="flex justify-between gap-2">
@@ -236,6 +248,7 @@
           <span class="tag" :style="s.method === 'cash' ? 'background:#e2e8f0' : 'background:#ccfbf1;color:#0f766e'">{{ s.method === 'cash' ? 'เงินสด' : 'โอน' }}</span>
           <span v-if="s.status === 'void'" class="tag ml-1" style="background:#fee2e2;color:#b91c1c">ยกเลิกแล้ว</span>
           <span v-if="s.by" class="text-xs text-slate-500 ml-1">{{ s.by }}</span>
+          <span v-if="s.memberId" class="tag ml-1" style="background:#dbeafe;color:#1e40af">{{ memberName(s.memberId) }}</span>
           <span v-if="s.backdated" class="tag ml-1" style="background:#fef3c7;color:#92400e">ย้อนหลัง</span>
         </div>
       </button>
@@ -446,6 +459,28 @@
       </div>
     </section>
 
+    <!-- ============ สมาชิก ============ -->
+    <section v-else-if="tab === 'members'" class="h-full overflow-y-auto p-3">
+      <div class="flex gap-2 mb-3">
+        <input v-model="memSearch" class="inp" placeholder="ค้นหาชื่อหรือเบอร์โทร">
+        <button class="btn btn-pri whitespace-nowrap" @click="openMemberForm(null)">+ เพิ่ม</button>
+      </div>
+      <div v-if="followupList.length" class="card p-3 mb-3">
+        <div class="font-bold mb-1">นัดติดตาม</div>
+        <button v-for="f in followupList" :key="f.id" class="w-full text-left py-2 border-b flex justify-between items-center gap-2" style="border-color:var(--line)" @click="openMember(memberById(f.mid))">
+          <span><span class="font-semibold">{{ memberName(f.mid) }}</span> <span class="text-sm text-slate-500">{{ f.reason }}</span></span>
+          <span class="tag whitespace-nowrap" :style="f.due < todayKey ? 'background:#fee2e2;color:#b91c1c' : (f.due === todayKey ? 'background:#fef3c7;color:#92400e' : 'background:#e2e8f0')">{{ f.due < todayKey ? 'เลยกำหนด ' : (f.due === todayKey ? 'วันนี้ ' : '') }}{{ fmtDay(f.due) }}</span>
+        </button>
+      </div>
+      <div v-if="memberList.length === 0" class="text-center text-slate-400 py-12">{{ S.members.length ? 'ไม่พบสมาชิก' : 'ยังไม่มีสมาชิก กด + เพิ่ม' }}</div>
+      <button v-for="m in memberList" :key="m.id" class="card w-full text-left p-3 mb-2" @click="openMember(m)">
+        <div class="flex justify-between gap-2"><div class="font-semibold">{{ memberLabel(m) }} <span v-if="m.name" class="text-xs text-slate-400">{{ m.code }}</span></div><div class="text-sm text-slate-500">{{ m.phone }}</div></div>
+        <div v-if="m.allergies.length" class="text-sm mt-1" style="color:#b91c1c">แพ้ยา: {{ allergyText(m) }}</div>
+        <div class="text-xs text-slate-500 mt-1">ซื้อล่าสุด: {{ lastBuy(m) }}</div>
+      </button>
+      <div class="text-xs text-slate-400 text-center mt-4">เก็บเท่าที่จำเป็น ตั้งชื่อเป็นชื่อเล่นหรือรหัสที่จำได้ก็ได้ ไม่ต้องใช้ชื่อจริง ไม่ต้องกรอกทุกช่อง</div>
+    </section>
+
     <!-- ============ 5) ปิดวัน ============ -->
     <section v-else-if="tab === 'report'" class="h-full overflow-y-auto p-3">
       <div class="flex items-center gap-2 mb-3">
@@ -590,6 +625,7 @@
       <div class="w-14 h-14 mx-auto rounded-full flex items-center justify-center text-3xl mb-2" style="background:#dcfce7;color:#166534">&#10003;</div>
       <div class="font-bold text-lg">บันทึกบิล {{ resultSale.no }} แล้ว</div>
       <div class="text-slate-500">ยอด ฿{{ money(resultSale.total) }} ({{ resultSale.method === 'cash' ? 'เงินสด' : 'รับโอน' }})</div>
+      <div v-if="resultSale.memberId" class="text-sm" style="color:#1e40af">สมาชิก: {{ memberName(resultSale.memberId) }}</div>
       <div v-if="resultSale.method === 'cash'" class="my-4 p-4 rounded-xl" style="background:#dcfce7;color:#166534">
         <div class="text-sm">เงินทอน</div><div class="text-5xl font-bold num">฿{{ money(resultSale.change) }}</div>
       </div>
@@ -614,6 +650,114 @@
     </div>
   </div>
 
+  <!-- เลือกสมาชิกตอนขาย -->
+  <div v-if="pickModal.open" class="modal-bg" @click.self="pickModal.open = false">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-3">เลือกสมาชิก</div>
+      <input v-model="pickModal.search" class="inp mb-3" placeholder="ค้นหาชื่อหรือเบอร์โทร">
+      <div v-if="pickList.length === 0" class="text-center text-slate-400 py-4">{{ S.members.length ? 'ไม่พบสมาชิก' : 'ยังไม่มีสมาชิก' }}</div>
+      <button v-for="m in pickList" :key="m.id" class="card w-full text-left p-3 mb-2" @click="selectMember(m)">
+        <div class="flex justify-between"><span class="font-semibold">{{ memberLabel(m) }}</span><span class="text-sm text-slate-500">{{ m.phone }}</span></div>
+        <div v-if="m.allergies.length" class="text-sm" style="color:#b91c1c">แพ้ยา: {{ allergyText(m) }}</div>
+      </button>
+      <button class="btn btn-pri w-full mt-2" @click="openMemberForm(null, true)">+ สมาชิกใหม่</button>
+    </div>
+  </div>
+
+  <!-- ข้อมูลสมาชิก -->
+  <div v-if="curMember" class="modal-bg" @click.self="memberModalId = null">
+    <div class="modal">
+      <div class="sticky top-0 bg-white p-4 border-b flex justify-between items-start" style="border-color:var(--line)">
+        <div>
+          <div class="font-bold text-lg">{{ memberLabel(curMember) }}</div>
+          <div class="text-sm text-slate-500">{{ curMember.code }}<span v-if="curMember.phone"> · {{ curMember.phone }}</span></div>
+        </div>
+        <button class="btn btn-ghost !min-h-0 !py-1 !px-3" @click="memberModalId = null">ปิด</button>
+      </div>
+      <div class="p-4 space-y-4">
+        <div v-if="curMember.allergies.length" class="p-3 rounded-xl" style="background:#fee2e2;color:#b91c1c">
+          <div class="font-bold mb-1">ประวัติแพ้ยา</div>
+          <div v-for="(a, i) in curMember.allergies" :key="i" class="text-sm">{{ a.drug }}<span v-if="a.reaction"> ({{ a.reaction }})</span></div>
+        </div>
+        <div v-else class="text-sm text-slate-500">ยังไม่มีบันทึกประวัติแพ้ยา</div>
+        <div v-if="curMember.note" class="text-sm p-3 rounded-lg" style="background:#f8fafc;border:1px solid var(--line)">{{ curMember.note }}</div>
+
+        <div>
+          <div class="font-bold mb-2">นัดติดตาม</div>
+          <div v-for="f in curMemberFollowups" :key="f.id" class="p-3 mb-2 rounded-xl border text-sm" :style="f.status === 'done' ? 'border-color:var(--line);background:#f8fafc;opacity:.7' : (f.due < todayKey ? 'border-color:#fecaca;background:#fef2f2' : 'border-color:var(--line);background:#fffbeb')">
+            <div class="flex justify-between gap-2"><div><b>{{ f.reason }}</b></div><div class="whitespace-nowrap">{{ fmtDay(f.due) }}</div></div>
+            <div v-if="f.status === 'done'" class="text-slate-500">ติดตามแล้ว {{ fmtDay(dayKey(new Date(f.doneAt))) }}<span v-if="f.result"> : {{ f.result }}</span></div>
+            <div v-else class="flex gap-2 mt-2">
+              <button class="btn btn-pri !min-h-0 !py-2 text-sm flex-1" @click="openFuDone(f)">ติดตามแล้ว</button>
+              <button class="btn btn-badline !min-h-0 !py-2 text-sm" @click="askDeleteFollowup(f)">ลบ</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-5 gap-2">
+            <input type="date" v-model="fuForm.date" :min="todayKey" class="inp col-span-2">
+            <input v-model="fuForm.reason" class="inp col-span-3" placeholder="เรื่องที่ติดตาม">
+          </div>
+          <button class="btn btn-ghost w-full mt-2" @click="addFollowupAction">+ เพิ่มนัดติดตาม</button>
+        </div>
+
+        <div>
+          <div class="font-bold mb-2">บันทึกของเภสัชกร</div>
+          <textarea v-model="noteText" rows="3" class="inp" placeholder="เช่น อาการ คำแนะนำ ยาที่จ่าย"></textarea>
+          <button class="btn btn-ghost w-full mt-2 mb-3" @click="addNoteAction">+ บันทึก</button>
+          <div v-if="curMemberNotes.length === 0" class="text-sm text-slate-400">ยังไม่มีบันทึก</div>
+          <div v-for="n in curMemberNotes" :key="n.id" class="py-2 border-b text-sm" style="border-color:var(--line)">
+            <div class="flex justify-between text-xs text-slate-500"><span>{{ fmtDay(dayKey(new Date(n.ts))) }} {{ fmtTime(n.ts) }}<span v-if="n.by"> โดย {{ n.by }}</span></span><button class="underline" @click="askDeleteNote(n)">ลบ</button></div>
+            <div style="white-space:pre-wrap">{{ n.text }}</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="font-bold mb-2">ประวัติการซื้อ <span class="text-sm font-normal text-slate-500">({{ curMemberSales.length }} บิล)</span></div>
+          <div v-if="curMemberSales.length === 0" class="text-sm text-slate-400">ยังไม่มีประวัติ (เลือกสมาชิกตอนขายเพื่อบันทึก)</div>
+          <button v-for="s in curMemberSales.slice(0, 30)" :key="s.id" class="w-full text-left py-2 border-b text-sm" style="border-color:var(--line)" @click="saleDetailId = s.id; voidReason = 'คีย์ผิด'">
+            <div class="flex justify-between"><span class="text-slate-500">{{ fmtDay(s.day) }} {{ s.no }}</span><span class="num font-semibold">฿{{ money(s.total) }}</span></div>
+            <div>{{ saleSummary(s) }}</div>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button class="btn btn-ghost" @click="openMemberForm(curMember)">แก้ไขข้อมูล</button>
+          <button class="btn btn-badline" @click="askDeleteMember">ลบสมาชิก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ฟอร์มสมาชิก -->
+  <div v-if="memberForm" class="modal-bg" @click.self="memberForm = null">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-1">{{ memberForm.id ? 'แก้ไขข้อมูลสมาชิก' : 'เพิ่มสมาชิก' }}</div>
+      <div class="text-xs text-slate-500 mb-3">ไม่ต้องกรอกทุกช่อง ถ้าไม่ใส่ชื่อ ระบบจะตั้งรหัสให้เอง</div>
+      <label class="lbl">ชื่อ (ตั้งเองได้ เช่น ชื่อเล่น)</label><input v-model="memberForm.name" class="inp mb-3" autocomplete="off">
+      <label class="lbl">เบอร์โทร</label><input v-model="memberForm.phone" type="tel" inputmode="tel" class="inp mb-3" autocomplete="off">
+      <div class="p-3 rounded-xl mb-3" style="background:#fef2f2;border:1px solid #fecaca">
+        <div class="font-semibold mb-2" style="color:#b91c1c">ประวัติแพ้ยา</div>
+        <div v-for="(a, i) in memberForm.allergies" :key="i" class="flex gap-2 mb-2 items-center">
+          <input v-model="a.drug" class="inp" placeholder="ชื่อยา / กลุ่มยา">
+          <input v-model="a.reaction" class="inp" placeholder="อาการ (ถ้ามี)">
+          <button class="text-red-500 font-bold px-2" @click="memberForm.allergies.splice(i, 1)">ลบ</button>
+        </div>
+        <button class="btn btn-ghost !min-h-0 !py-2 text-sm" @click="memberForm.allergies.push({ drug: '', reaction: '' })">+ เพิ่มยาที่แพ้</button>
+        <div class="text-xs text-slate-500 mt-2">ระบบเตือนตอนขายจากการเทียบชื่อยาและกลุ่มยาที่พบบ่อย (เช่น penicillin, NSAID, sulfa) เป็นตัวช่วยเตือนเบื้องต้นเท่านั้น</div>
+      </div>
+      <label class="lbl">หมายเหตุ (เช่น โรคประจำตัว ยาที่ใช้ประจำ)</label><textarea v-model="memberForm.note" rows="3" class="inp mb-4"></textarea>
+      <div class="grid grid-cols-2 gap-2"><button class="btn btn-ghost" @click="memberForm = null">ยกเลิก</button><button class="btn btn-pri" @click="saveMemberForm">บันทึก</button></div>
+    </div>
+  </div>
+
+  <!-- ติดตามแล้ว -->
+  <div v-if="fuDone.open" class="modal-bg" @click.self="fuDone.open = false">
+    <div class="modal p-5">
+      <div class="font-bold text-lg mb-3">บันทึกผลการติดตาม</div>
+      <textarea v-model="fuDone.result" rows="3" class="inp mb-3" placeholder="ผลการติดตาม (ไม่บังคับ)"></textarea>
+      <div class="grid grid-cols-2 gap-2"><button class="btn btn-ghost" @click="fuDone.open = false">ยกเลิก</button><button class="btn btn-pri" @click="saveFuDone">บันทึก</button></div>
+    </div>
+  </div>
+
   <!-- รายละเอียดบิล -->
   <div v-if="curSale" class="modal-bg" @click.self="saleDetailId = null">
     <div class="modal p-5">
@@ -621,6 +765,7 @@
         <div><div class="font-bold text-lg">{{ curSale.no }}</div><div class="text-sm text-slate-500">{{ fmtDay(curSale.day) }} {{ fmtTime(curSale.ts) }}<span v-if="curSale.by"> โดย {{ curSale.by }}</span></div></div>
         <button class="text-slate-400 text-2xl leading-none" @click="saleDetailId = null">&times;</button>
       </div>
+      <div v-if="curSale.memberId" class="text-sm mb-2" style="color:#1e40af">สมาชิก: {{ memberName(curSale.memberId) }}</div>
       <div v-if="curSale.status === 'void'" class="p-2 rounded-lg mb-2 text-sm" style="background:#fee2e2;color:#b91c1c">
         ยกเลิกแล้ว เหตุผล: {{ curSale.voidReason }}<span v-if="curSale.voidBy"> (โดย {{ curSale.voidBy }})</span>
       </div>
@@ -919,7 +1064,8 @@
   <div v-if="resetModal.open" class="modal-bg" style="z-index:66">
     <div class="modal p-5">
       <div class="font-bold text-lg mb-1">ล้างประวัติ เริ่มนับสต็อกใหม่</div>
-      <div class="text-sm text-slate-600 mb-3">จะลบ: บิลขาย บิลรับเข้า ใบคืนสินค้า การเบิกวัสดุ ประวัติเข้า-ออก ข้อมูลปิดวัน สต็อกทุกรายการเป็น 0 และเลขบิลเริ่มที่ B00001 ใหม่<br>จะเก็บไว้: รายการยาทั้งหมด (ชื่อ ราคา ชุดยา แกะแบ่งขาย) ชื่อร้าน รหัสผ่าน</div>
+      <div class="text-sm text-slate-600 mb-3">จะลบ: บิลขาย บิลรับเข้า ใบคืนสินค้า การเบิกวัสดุ ประวัติเข้า-ออก ข้อมูลปิดวัน สต็อกทุกรายการเป็น 0 และเลขบิลเริ่มที่ B00001 ใหม่<br>จะเก็บไว้: รายการยาทั้งหมด (ชื่อ ราคา ชุดยา แกะแบ่งขาย) ข้อมูลสมาชิกและบันทึก ชื่อร้าน รหัสผ่าน</div>
+      <label class="flex items-center gap-2 text-sm mb-3"><input type="checkbox" v-model="resetModal.members" class="w-5 h-5"> ล้างข้อมูลสมาชิก บันทึก และนัดติดตามด้วย</label>
       <button class="btn btn-ghost w-full mb-3" @click="makeBackup">สำรองข้อมูลก่อนล้าง (ไปคัดลอกที่ตั้งค่า)</button>
       <label class="lbl">พิมพ์คำว่า "ล้าง" เพื่อยืนยัน</label>
       <input v-model="resetModal.text" class="inp mb-3" placeholder="ล้าง">
@@ -1033,6 +1179,10 @@ function migrate(S) {
   if (!Array.isArray(S.issues)) { S.issues = []; changed = true }
   if (!S.seq) { S.seq = { sale: 0 }; changed = true }
   if (S.seq.ret === undefined) { S.seq.ret = 0; changed = true }
+  if (S.seq.mem === undefined) { S.seq.mem = 0; changed = true }
+  if (!Array.isArray(S.members)) { S.members = []; changed = true }
+  if (!Array.isArray(S.memberNotes)) { S.memberNotes = []; changed = true }
+  if (!Array.isArray(S.followups)) { S.followups = []; changed = true }
   for (const e of EXTRA_PRODUCTS) {
     if (S.products.some(p => p.id === e.id || p.code === e.code)) continue
     S.products.push({ generic: '', category: 'อื่นๆ', cost: 0, price: 0, reorder: 1, note: '', active: true, ...e })
@@ -1166,7 +1316,7 @@ const Logic = {
     return Number(p.cost) || 0
   },
   // at = เวลาขายย้อนหลัง (ISO) / deduct=false ใช้บันทึกยอดขายอย่างเดียว ไม่ตัดสต็อก
-  commitSale(S, { items, discount, method, received, at, deduct }) {
+  commitSale(S, { items, discount, method, received, at, deduct, memberId }) {
     if (!items.length) throw new Error('ตะกร้าว่าง')
     const stockOn = deduct !== false
     if (at && new Date(at).getTime() > Date.now() + 60000) throw new Error('เลือกวันที่ในอนาคตไม่ได้')
@@ -1211,7 +1361,8 @@ const Logic = {
     const recv = method === 'cash' ? R2(received) : total
     const sale = { id: uid(), no, ts, day: dayKey(new Date(ts)), items: lines, subtotal, discount: disc, total,
                    method, received: recv, change: R2(recv - total), status: 'ok', by: ACTOR,
-                   backdated: !!at, enteredAt: new Date().toISOString(), noStock: !stockOn }
+                   backdated: !!at, enteredAt: new Date().toISOString(), noStock: !stockOn,
+                   memberId: (memberId && S.members && S.members.some(m => m.id === memberId)) ? memberId : '' }
     S.sales.push(sale)
     return sale
   },
@@ -1425,9 +1576,102 @@ const Logic = {
     }
     return { gained, qty }
   },
-  clearHistory(S) {
+  clearHistory(S, opt) {
     S.lots = []; S.movements = []; S.sales = []; S.receipts = []; S.closings = []; S.returns = []; S.issues = []
-    S.seq = { sale: 0, ret: 0 }
+    const keepMem = (S.seq && S.seq.mem) || 0
+    S.seq = { sale: 0, ret: 0, mem: keepMem }
+    if (opt && opt.members) { S.members = []; S.memberNotes = []; S.followups = []; S.seq.mem = 0 }
+  },
+
+  // ---------- สมาชิก / ประวัติการจ่ายยา (เก็บเท่าที่จำเป็น: ชื่อที่ตั้งเอง เบอร์โทร ประวัติแพ้ยา หมายเหตุ) ----------
+  cleanAllergies(list) {
+    return (list || []).map(a => ({ drug: String(a.drug || '').trim(), reaction: String(a.reaction || '').trim() })).filter(a => a.drug)
+  },
+  addMember(S, { name, phone, allergies, note }) {
+    S.seq.mem = (S.seq.mem || 0) + 1
+    const m = { id: uid(), code: 'M' + String(S.seq.mem).padStart(4, '0'), name: String(name || '').trim(), phone: String(phone || '').trim(),
+                allergies: this.cleanAllergies(allergies), note: String(note || '').trim(), createdAt: new Date().toISOString(), by: ACTOR }
+    S.members.push(m)
+    return m
+  },
+  updateMember(S, id, { name, phone, allergies, note }) {
+    const m = S.members.find(x => x.id === id)
+    if (!m) throw new Error('ไม่พบสมาชิก')
+    m.name = String(name || '').trim(); m.phone = String(phone || '').trim()
+    m.allergies = this.cleanAllergies(allergies); m.note = String(note || '').trim()
+    return m
+  },
+  deleteMember(S, id) {
+    S.members = S.members.filter(m => m.id !== id)
+    S.memberNotes = S.memberNotes.filter(n => n.mid !== id)
+    S.followups = S.followups.filter(f => f.mid !== id)
+  },
+  memberSales(S, mid) { return S.sales.filter(s => s.memberId === mid && s.status === 'ok').sort((a, b) => b.ts.localeCompare(a.ts)) },
+  addMemberNote(S, mid, text) {
+    text = String(text || '').trim()
+    if (!text) throw new Error('พิมพ์บันทึกก่อน')
+    if (!S.members.some(m => m.id === mid)) throw new Error('ไม่พบสมาชิก')
+    const n = { id: uid(), mid, ts: new Date().toISOString(), text, by: ACTOR }
+    S.memberNotes.push(n)
+    return n
+  },
+  deleteMemberNote(S, id) { S.memberNotes = S.memberNotes.filter(n => n.id !== id) },
+  addFollowup(S, { mid, due, reason }) {
+    if (!S.members.some(m => m.id === mid)) throw new Error('ไม่พบสมาชิก')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(due || ''))) throw new Error('เลือกวันนัดก่อน')
+    const f = { id: uid(), mid, due, reason: String(reason || '').trim() || 'ติดตามอาการ', status: 'open', createdAt: new Date().toISOString(), by: ACTOR }
+    S.followups.push(f)
+    return f
+  },
+  doneFollowup(S, id, result) {
+    const f = S.followups.find(x => x.id === id)
+    if (!f || f.status !== 'open') throw new Error('ไม่พบนัดที่ยังค้างอยู่')
+    f.status = 'done'; f.doneAt = new Date().toISOString(); f.result = String(result || '').trim(); f.doneBy = ACTOR
+    return f
+  },
+  deleteFollowup(S, id) { S.followups = S.followups.filter(f => f.id !== id) },
+
+  // ---------- เตือนแพ้ยา (ตัวช่วยเตือนเบื้องต้นจากการเทียบข้อความ ไม่ใช่การตรวจสอบครบถ้วน ต้องใช้ดุลยพินิจเภสัชกรเสมอ) ----------
+  ALLERGY_GROUPS: [
+    { keys: ['penicillin', 'เพนิซิลลิน', 'เพนนิซิลลิน', 'เพนิซิลิน', 'เพนนิซิลิน'], hits: ['penicillin', 'amoxicillin', 'ampicillin', 'cloxacillin', 'clavulan', 'amoxy'] },
+    { keys: ['nsaid', 'เอ็นเสด', 'แก้ปวดอักเสบ', 'ยาแก้อักเสบ'], hits: ['ibuprofen', 'diclofenac', 'naproxen', 'piroxicam', 'celecoxib', 'etoricoxib', 'indomethacin', 'mefenamic', 'ketorolac', 'meloxicam'] },
+    { keys: ['sulfa', 'ซัลฟา'], hits: ['sulfa', 'sulfamethoxazole', 'cotrimoxazole', 'trimethoprim'] },
+    { keys: ['cephalosporin', 'เซฟ'], hits: ['cef', 'ceph'] },
+    { keys: ['quinolone', 'ควิโนโลน', 'floxacin'], hits: ['floxacin'] },
+    { keys: ['paracetamol', 'พาราเซตามอล', 'acetaminophen', 'พารา'], hits: ['paracetamol', 'acetaminophen'] },
+    { keys: ['aspirin', 'แอสไพริน'], hits: ['aspirin', 'acetylsalicylic'] }
+  ],
+  allergyTokens(m) {
+    const out = []
+    for (const a of (m && m.allergies) || []) {
+      const d = String(a.drug || '').toLowerCase()
+      for (const t of d.split(/[\s+,\/()]+/).filter(x => x.length >= 3)) out.push({ token: t, drug: a.drug })
+      for (const g of this.ALLERGY_GROUPS) {
+        if (g.keys.some(k => d.includes(k))) for (const h of g.hits) out.push({ token: h, drug: a.drug })
+      }
+    }
+    return out
+  },
+  productText(S, p, depth) {
+    const own = (String(p.name || '') + ' ' + String(p.generic || '')).toLowerCase()
+    if (p.bundle && p.bundle.length && (depth || 0) < 3) {
+      return own + ' ' + p.bundle.map(b => { const c = S.products.find(x => x.id === b.pid); return c ? this.productText(S, c, (depth || 0) + 1) : '' }).join(' ')
+    }
+    return own
+  },
+  allergyHits(S, m, items) {
+    if (!m || !(m.allergies || []).length) return []
+    const toks = this.allergyTokens(m), hits = []
+    for (const it of items) {
+      if (!it.pid) continue
+      const p = S.products.find(x => x.id === it.pid)
+      if (!p) continue
+      const text = this.productText(S, p)
+      for (const t of toks) {
+        if (text.includes(t.token) && !hits.some(h => h.product === p.name && h.drug === t.drug)) hits.push({ product: p.name, drug: t.drug })
+      }
+    }
+    return hits
   },
   dayReport(S, day) {
     const list = S.sales.filter(s => s.day === day)
@@ -1474,10 +1718,12 @@ createApp({
       ret: { supplier: '', day: today, reason: 'ขายไม่ออก', items: [], refund: '' }, retSearch: '', retOpen: false, retDetailId: null,
       backdate: { on: false, date: '', time: '', deduct: true }, backModal: { open: false, date: '', time: '', deduct: true },
       supSearch: '', supMonth: ymOf(new Date()), issueModal: { open: false, pid: null, qty: 1, note: '' },
-      unpackModal: { open: false, qty: 1 }, resetModal: { open: false, text: '' },
+      unpackModal: { open: false, qty: 1 }, resetModal: { open: false, text: '', members: false },
+      memSearch: '', memberModalId: null, memberForm: null, pickModal: { open: false, search: '' },
+      cartMemberId: '', allergyAck: false, noteText: '', fuForm: { date: '', reason: '' }, fuDone: { open: false, id: null, result: '' },
       stashAt: stash ? new Date(stash.at).toLocaleString('th-TH') : '',
       S: makeSeed(), storageOk: true, CATS, MOVE_LABEL,
-      tabs: [{ id: 'pos', name: 'ขาย' }, { id: 'history', name: 'บิล' }, { id: 'stock', name: 'คลังสินค้า' },
+      tabs: [{ id: 'pos', name: 'ขาย' }, { id: 'history', name: 'บิล' }, { id: 'members', name: 'สมาชิก' }, { id: 'stock', name: 'คลังสินค้า' },
              { id: 'receive', name: 'รับของ/คืนของ' }, { id: 'supplies', name: 'วัสดุ' }, { id: 'report', name: 'ปิดวัน' }, { id: 'settings', name: 'ตั้งค่า' }],
       tab: 'pos',
       search: '', cat: 'ทั้งหมด', cart: [], discount: '', cartOpen: false,
@@ -1556,6 +1802,34 @@ createApp({
     },
     invCount() { return { low: this.invAll.filter(r => r.low).length, out: this.invAll.filter(r => r.out).length, near: this.invAll.filter(r => r.near).length, supply: this.invAll.filter(r => r.p.type === 'supply').length } },
     alertCount() { return this.invCount.low + this.invCount.out + this.invAll.filter(r => r.near).length },
+    todayKey() { return dayKey(new Date()) },
+    cartMember() { return this.S.members.find(m => m.id === this.cartMemberId) || null },
+    cartAllergyHits() {
+      if (!this.cartMember) return []
+      return Logic.allergyHits(this.S, this.cartMember, this.cart)
+    },
+    cartHitText() { return this.cartAllergyHits.map(h => h.product + ' (แพ้ ' + h.drug + ')').join(', ') },
+    memberList() {
+      const q = this.memSearch.trim().toLowerCase()
+      return this.S.members.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.phone || '').includes(q) || m.code.toLowerCase().includes(q))
+        .slice().sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code, 'th'))
+    },
+    pickList() {
+      const q = this.pickModal.search.trim().toLowerCase()
+      return this.S.members.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.phone || '').includes(q) || m.code.toLowerCase().includes(q))
+        .slice().sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code, 'th')).slice(0, 30)
+    },
+    curMember() { return this.S.members.find(m => m.id === this.memberModalId) || null },
+    curMemberSales() { return this.curMember ? Logic.memberSales(this.S, this.curMember.id) : [] },
+    curMemberNotes() { return this.curMember ? this.S.memberNotes.filter(n => n.mid === this.curMember.id).slice().sort((a, b) => b.ts.localeCompare(a.ts)) : [] },
+    curMemberFollowups() {
+      return this.curMember ? this.S.followups.filter(f => f.mid === this.curMember.id).slice().sort((a, b) => (a.status === b.status ? a.due.localeCompare(b.due) : (a.status === 'open' ? -1 : 1))) : []
+    },
+    followupList() {
+      const lim = dayKey(new Date(Date.now() + 14 * 86400000))
+      return this.S.followups.filter(f => f.status === 'open' && f.due <= lim && this.S.members.some(m => m.id === f.mid)).slice().sort((a, b) => a.due.localeCompare(b.due))
+    },
+    dueCount() { return this.S.followups.filter(f => f.status === 'open' && f.due <= this.todayKey && this.S.members.some(m => m.id === f.mid)).length },
     invRows() {
       const q = this.invSearch.trim().toLowerCase()
       return this.invAll.filter(r =>
@@ -1829,6 +2103,11 @@ createApp({
       const it = this.cart.find(i => i.pid === p.id)
       if (it) it.qty++
       else this.cart.push({ key: uid(), pid: p.id, name: p.name, unit: p.unit, qty: 1, price: p.price })
+      this.allergyAck = false
+      if (this.cartMember) {
+        const h = Logic.allergyHits(this.S, this.cartMember, [{ pid: p.id }])
+        if (h.length) this.toast('⚠ ' + this.memberLabel(this.cartMember) + ' มีประวัติแพ้ ' + h[0].drug + ' ตรงกับ ' + p.name, 'bad')
+      }
     },
     onSearchEnter() {
       const q = this.search.trim().toLowerCase()
@@ -1869,6 +2148,9 @@ createApp({
       this.$nextTick(() => { const el = document.getElementById('price-' + item.key); if (el) { el.focus(); el.select() } })
     },
     confirmPay() {
+      if (this.cartAllergyHits.length && !this.allergyAck) {
+        return this.askConfirm('⚠ ตรวจสอบประวัติแพ้ยา', this.memberLabel(this.cartMember) + ' มีประวัติแพ้ยา ตะกร้ามี: ' + this.cartHitText + ' ยืนยันขายต่อหรือไม่', 'ยืนยันขายต่อ', () => { this.allergyAck = true; this.confirmPay() })
+      }
       if (this.backdate.on && this.S.closings.some(c => c.day === this.backdate.date)) {
         return this.askPin('เพิ่มบิลย้อนหลังในวันที่ปิดวันไปแล้ว', () => this.finishPay())
       }
@@ -1879,11 +2161,11 @@ createApp({
         const items = this.cart.map(i => ({ pid: i.pid, name: i.name, unit: i.unit, qty: i.qty, price: Number(i.price) || 0 }))
         const bd = this.backdate.on
         const sale = Logic.commitSale(this.S, { items, discount: this.discountAmt, method: this.payModal.method, received: Number(this.payModal.received) || 0,
-          at: bd ? new Date(this.backdate.date + 'T' + (this.backdate.time || '12:00')).toISOString() : undefined, deduct: bd ? this.backdate.deduct : true })
+          at: bd ? new Date(this.backdate.date + 'T' + (this.backdate.time || '12:00')).toISOString() : undefined, deduct: bd ? this.backdate.deduct : true, memberId: this.cartMemberId })
         this.resultSale = sale
         this.$nextTick(() => this.saveNow())
         this.payModal.open = false
-        this.cart = []; this.discount = ''; this.cartOpen = false
+        this.cart = []; this.discount = ''; this.cartOpen = false; this.cartMemberId = ''; this.allergyAck = false
       } catch (e) { this.toast(e.message, 'bad') }
     },
     undoResult() {
@@ -2044,11 +2326,60 @@ createApp({
         this.actor = n; ACTOR = n; this.toast('เปลี่ยนชื่อที่แสดงแล้ว')
       } catch (e) { this.toast('เชื่อมต่อไม่ได้', 'bad') }
     },
-    askClearHistory() { this.askPin('ล้างประวัติทั้งหมด', () => { this.resetModal = { open: true, text: '' } }) },
+    // ===== สมาชิก =====
+    memberById(id) { return this.S.members.find(m => m.id === id) || null },
+    memberLabel(m) { return m ? (m.name || m.code) : 'สมาชิกที่ถูกลบ' },
+    memberName(id) { return this.memberLabel(this.memberById(id)) },
+    allergyText(m) { return (m.allergies || []).map(a => a.drug + (a.reaction ? ' (' + a.reaction + ')' : '')).join(', ') },
+    lastBuy(m) { const l = Logic.memberSales(this.S, m.id)[0]; return l ? this.fmtDay(l.day) + ' (' + this.saleSummary(l).slice(0, 40) + ')' : 'ยังไม่เคยซื้อ' },
+    openPicker() { this.pickModal = { open: true, search: '' } },
+    selectMember(m) { this.cartMemberId = m.id; this.allergyAck = false; this.pickModal.open = false
+      if ((m.allergies || []).length) this.toast('⚠ ' + this.memberLabel(m) + ' แพ้ยา: ' + this.allergyText(m), 'bad') },
+    clearMember() { this.cartMemberId = ''; this.allergyAck = false },
+    openMember(m) { if (!m) return; this.memberModalId = m.id; this.noteText = ''; this.fuForm = { date: '', reason: '' } },
+    openMemberForm(m, fromPicker) {
+      this.memberForm = m
+        ? { id: m.id, name: m.name, phone: m.phone, note: m.note, allergies: (m.allergies || []).map(a => ({ ...a })), fromPicker: false }
+        : { id: '', name: '', phone: '', note: '', allergies: [], fromPicker: !!fromPicker }
+    },
+    saveMemberForm() {
+      const f = this.memberForm
+      try {
+        if (f.id) { Logic.updateMember(this.S, f.id, f); this.toast('บันทึกข้อมูลสมาชิกแล้ว') }
+        else {
+          const m = Logic.addMember(this.S, f)
+          this.toast('เพิ่มสมาชิกแล้ว: ' + this.memberLabel(m))
+          if (f.fromPicker) this.selectMember(m)
+        }
+        this.memberForm = null
+      } catch (e) { this.toast(e.message, 'bad') }
+    },
+    askDeleteMember() {
+      const m = this.curMember; if (!m) return
+      this.askPin('ลบสมาชิก ' + this.memberLabel(m), () => {
+        this.askConfirm('ลบสมาชิกนี้?', 'จะลบข้อมูลสมาชิก บันทึก และนัดติดตามทั้งหมดของคนนี้ บิลขายเดิมยังอยู่ แต่จะไม่แสดงชื่อ', 'ลบสมาชิก', () => {
+          if (this.cartMemberId === m.id) this.cartMemberId = ''
+          Logic.deleteMember(this.S, m.id); this.memberModalId = null; this.toast('ลบสมาชิกแล้ว')
+        })
+      })
+    },
+    addNoteAction() {
+      try { Logic.addMemberNote(this.S, this.curMember.id, this.noteText); this.noteText = ''; this.toast('บันทึกแล้ว') } catch (e) { this.toast(e.message, 'bad') }
+    },
+    askDeleteNote(n) { this.askConfirm('ลบบันทึกนี้?', n.text.slice(0, 60), 'ลบ', () => Logic.deleteMemberNote(this.S, n.id)) },
+    addFollowupAction() {
+      try { Logic.addFollowup(this.S, { mid: this.curMember.id, due: this.fuForm.date, reason: this.fuForm.reason }); this.fuForm = { date: '', reason: '' }; this.toast('เพิ่มนัดติดตามแล้ว') } catch (e) { this.toast(e.message, 'bad') }
+    },
+    openFuDone(f) { this.fuDone = { open: true, id: f.id, result: '' } },
+    saveFuDone() {
+      try { Logic.doneFollowup(this.S, this.fuDone.id, this.fuDone.result); this.fuDone.open = false; this.toast('บันทึกว่าติดตามแล้ว') } catch (e) { this.toast(e.message, 'bad') }
+    },
+    askDeleteFollowup(f) { this.askConfirm('ลบนัดนี้?', f.reason + ' วันที่ ' + this.fmtDay(f.due), 'ลบนัด', () => Logic.deleteFollowup(this.S, f.id)) },
+    askClearHistory() { this.askPin('ล้างประวัติทั้งหมด', () => { this.resetModal = { open: true, text: '', members: false } }) },
     doClearHistory() {
       if (this.resetModal.text.trim() !== 'ล้าง') return
       Storage.stash(this.S); this.refreshStash()
-      Logic.clearHistory(this.S)
+      Logic.clearHistory(this.S, { members: this.resetModal.members })
       this.cart = []; this.discount = ''; this.backdate.on = false; this.resetModal.open = false
       this.toast('ล้างประวัติแล้ว สต็อกทุกรายการเป็น 0 (ข้อมูลเดิมเก็บสำรองไว้ในเครื่องนี้)')
     },
@@ -2147,7 +2478,7 @@ createApp({
     },
     resetAll() {
       this.askPin('ล้างข้อมูลทั้งหมด', () => {
-        this.askConfirm('ล้างข้อมูลทั้งหมด?', 'บิลและประวัติจะหายทั้งหมด ย้อนกลับไม่ได้', 'ล้างและเริ่มใหม่', () => {
+        this.askConfirm('ล้างข้อมูลทั้งหมด?', 'บิล ประวัติ และข้อมูลสมาชิกจะหายทั้งหมด ย้อนกลับไม่ได้', 'ล้างและเริ่มใหม่', () => {
           const keep = JSON.parse(JSON.stringify(this.S.settings))
           Storage.stash(this.S); this.refreshStash()
           Object.assign(this.S, makeSeed()); this.S.settings = keep; this.cart = []; this.toast('เริ่มใหม่แล้ว (ข้อมูลเดิมเก็บสำรองไว้ในเครื่องนี้)')
